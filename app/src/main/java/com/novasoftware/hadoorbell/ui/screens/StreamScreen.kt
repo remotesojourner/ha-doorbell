@@ -68,6 +68,7 @@ fun StreamScreen(
     var lockEntityId by remember { mutableStateOf("") }
     var lockState by remember { mutableStateOf("unknown") }
     var isStreamMuted by remember { mutableStateOf(false) }
+    var isSwitchingModes by remember { mutableStateOf(false) }
     
     // Quick Reply State
     val showQuickReplySheet = remember { mutableStateOf(false) }
@@ -302,12 +303,14 @@ fun StreamScreen(
                 
                 FloatingActionButton(
                     onClick = {
+                        if (webRtcManager == null || isSwitchingModes) return@FloatingActionButton
+                        isSwitchingModes = true
                         isMicEnabled = !isMicEnabled
                         
                         coroutineScope.launch {
-                            webRtcManager?.disconnect()
+                            webRtcManager?.disconnect()?.join()
                             webRtcManager = null
-                            kotlinx.coroutines.delay(600)
+                            kotlinx.coroutines.delay(100)
                             
                             val url = appPreferences.haUrlFlow.first() ?: ""
                             val token = appPreferences.haTokenFlow.first() ?: ""
@@ -315,6 +318,7 @@ fun StreamScreen(
                             
                             val signalingClient = FrigateSignalingClient(url, token, streamSource)
                             webRtcManager = WebRtcManager(context, signalingClient, coroutineScope)
+                            isSwitchingModes = false
                         }
                     },
                     modifier = Modifier.size(64.dp),

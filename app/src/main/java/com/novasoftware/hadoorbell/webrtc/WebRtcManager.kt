@@ -41,6 +41,7 @@ class WebRtcManager(
     private var remoteAudioTrack: AudioTrack? = null
     private var eglBase: EglBase? = null
     private var audioDeviceModule: JavaAudioDeviceModule? = null
+    private var connectionJob: kotlinx.coroutines.Job? = null
 
     init {
         synchronized(WebRtcManager::class.java) {
@@ -70,7 +71,7 @@ class WebRtcManager(
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         setOptimalAudioDevice(audioManager)
 
-        coroutineScope.launch {
+        connectionJob = coroutineScope.launch {
             try {
                 signalingClient.connect()
                 
@@ -222,6 +223,9 @@ class WebRtcManager(
                         }
                     }, answerDesc)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                Log.d("WebRtcManager", "Connection cancelled")
+                throw e
             } catch (e: Exception) {
                 Log.e("WebRtcManager", "Error establishing connection", e)
                 kotlinx.coroutines.withContext(Dispatchers.Main) {
@@ -237,7 +241,8 @@ class WebRtcManager(
         remoteAudioTrack?.setEnabled(!muted)
     }
 
-    fun disconnect() {
+    fun disconnect(): kotlinx.coroutines.Job {
+        connectionJob?.cancel()
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         audioManager.mode = AudioManager.MODE_NORMAL
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
@@ -247,12 +252,16 @@ class WebRtcManager(
             audioManager.isSpeakerphoneOn = false
         }
 
-        coroutineScope.launch(Dispatchers.IO) {
+        return coroutineScope.launch(Dispatchers.IO) {
             signalingClient.disconnect()
-            peerConnection?.close()
-            peerConnectionFactory?.dispose()
-            audioDeviceModule?.release()
-            eglBase?.release()
+            try {
+                peerConnection?.close()
+                peerConnectionFactory?.dispose()
+                audioDeviceModule?.release()
+                eglBase?.release()
+            } catch (e: Exception) {
+                Log.e("WebRtcManager", "Error during WebRTC cleanup", e)
+            }
         }
     }
 
