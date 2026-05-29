@@ -1,0 +1,15 @@
+# Set default behavior for all files
+* text=auto
+
+# Enforce LF for text files that require it (like shell scripts)
+*.sh text eol=lf
+*.bat text eol=crlf
+*.kts text eol=lf
+
+# Denote binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.svg binary
+*.webp binary
+*.keystore binary
