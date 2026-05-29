@@ -151,7 +151,7 @@ class FrigateSignalingClient(
 
     fun getIceCandidates(): Flow<String> = iceCandidatesFlow
 
-    suspend fun disconnect() {
+    fun disconnect() {
         webSocket?.close(1000, "Disconnected by user")
     }
 }

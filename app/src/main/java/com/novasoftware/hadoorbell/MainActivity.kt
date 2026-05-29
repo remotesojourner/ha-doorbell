@@ -3,6 +3,7 @@ package com.novasoftware.hadoorbell
 import android.os.Bundle
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -44,6 +45,8 @@ class MainActivity : FragmentActivity() {
         }
 
         val appPreferences = AppPreferences(applicationContext)
+        
+        enableEdgeToEdge()
 
         setContent {
             if (!permissionGranted) {
@@ -65,10 +68,10 @@ class MainActivity : FragmentActivity() {
                         val token = appPreferences.haTokenFlow.first()
                         val source = appPreferences.streamSourceFlow.first()
 
-                        if (!url.isNullOrBlank() && !token.isNullOrBlank() && !source.isNullOrBlank()) {
-                            startDestination = "stream"
+                        startDestination = if (!url.isNullOrBlank() && !token.isNullOrBlank() && !source.isNullOrBlank()) {
+                            "stream"
                         } else {
-                            startDestination = "settings"
+                            "settings"
                         }
                     }
 

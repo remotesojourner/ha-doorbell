@@ -48,7 +48,7 @@ import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,10 +103,10 @@ fun StreamScreen(
                     apiClient = HomeAssistantApiClient(url, token)
                     
                     if (lockEntityId.isNotBlank()) {
-                        try {
-                            lockState = apiClient?.getEntityState(lockEntityId) ?: "unknown"
-                        } catch (e: Exception) {
-                            lockState = "unknown"
+                        lockState = try {
+                            apiClient?.getEntityState(lockEntityId) ?: "unknown"
+                        } catch (_: Exception) {
+                            "unknown"
                         }
                     }
 

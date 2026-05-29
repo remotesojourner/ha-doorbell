@@ -35,7 +35,7 @@ class HomeAssistantApiClient(
                     if (!response.isSuccessful) {
                         throw Exception("HTTP ${response.code}: ${response.message}")
                     }
-                    val bodyString = response.body?.string() ?: "{}"
+                    val bodyString = response.body.string()
                     val map = gson.fromJson(bodyString, Map::class.java)
                     
                     val attributes = map["attributes"] as? Map<*, *>
@@ -68,7 +68,7 @@ class HomeAssistantApiClient(
                     if (!response.isSuccessful) {
                         throw Exception("HTTP ${response.code}: ${response.message}")
                     }
-                    val bodyString = response.body?.string() ?: "{}"
+                    val bodyString = response.body.string()
                     val map = gson.fromJson(bodyString, Map::class.java)
                     
                     val state = map["state"] as? String ?: "unknown"

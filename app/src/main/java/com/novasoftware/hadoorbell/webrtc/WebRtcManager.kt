@@ -2,16 +2,32 @@ package com.novasoftware.hadoorbell.webrtc
 
 import android.content.Context
 import android.media.AudioManager
-import com.novasoftware.hadoorbell.integrations.FrigateSignalingClient
 import android.util.Log
+import com.novasoftware.hadoorbell.integrations.FrigateSignalingClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import org.webrtc.*
+import kotlinx.coroutines.suspendCancellableCoroutine
+import org.webrtc.AudioTrack
+import org.webrtc.DataChannel
+import org.webrtc.DefaultVideoDecoderFactory
+import org.webrtc.DefaultVideoEncoderFactory
+import org.webrtc.EglBase
+import org.webrtc.IceCandidate
+import org.webrtc.MediaConstraints
+import org.webrtc.MediaStream
+import org.webrtc.MediaStreamTrack
+import org.webrtc.PeerConnection
+import org.webrtc.PeerConnectionFactory
+import org.webrtc.RtpReceiver
+import org.webrtc.RtpTransceiver
+import org.webrtc.SdpObserver
+import org.webrtc.SessionDescription
+import org.webrtc.VideoSink
+import org.webrtc.VideoTrack
 import org.webrtc.audio.JavaAudioDeviceModule
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
 
 class WebRtcManager(
     private val context: Context,
@@ -139,7 +155,6 @@ class WebRtcManager(
                 coroutineScope.launch {
                     signalingClient.getIceCandidates().collect { candidateStr ->
                         try {
-                            // go2rtc uses BUNDLE, so candidates generally apply to the first mid (0)
                             val candidate = IceCandidate("0", 0, candidateStr)
                             peerConnection?.addIceCandidate(candidate)
                         } catch (e: Exception) {
@@ -149,30 +164,35 @@ class WebRtcManager(
                 }
 
                 // Create Offer
-                val offer = suspendCoroutine<SessionDescription> { cont ->
+                val offer = suspendCancellableCoroutine { cont ->
                     peerConnection?.createOffer(object : SdpObserver {
                         override fun onCreateSuccess(desc: SessionDescription?) {
-                            if (desc != null) cont.resume(desc) else cont.resumeWithException(Exception("Empty offer"))
+                            if (desc != null) cont.resume(desc) else cont.resumeWithException(
+                                Exception("Empty offer")
+                            )
                         }
+
                         override fun onSetSuccess() {}
-                        override fun onCreateFailure(error: String?) { 
+                        override fun onCreateFailure(error: String?) {
                             Log.e("WebRtcManager", "Create offer failed: $error")
-                            cont.resumeWithException(Exception("Create offer failed: $error")) 
+                            cont.resumeWithException(Exception("Create offer failed: $error"))
                         }
+
                         override fun onSetFailure(error: String?) {}
                     }, MediaConstraints())
                 }
 
-                suspendCoroutine<Unit> { cont ->
+                suspendCancellableCoroutine { cont ->
                     peerConnection?.setLocalDescription(object : SdpObserver {
                         override fun onCreateSuccess(p0: SessionDescription?) {}
-                        override fun onSetSuccess() { 
-                            cont.resume(Unit) 
+                        override fun onSetSuccess() {
+                            cont.resume(Unit)
                         }
+
                         override fun onCreateFailure(p0: String?) {}
-                        override fun onSetFailure(error: String?) { 
+                        override fun onSetFailure(error: String?) {
                             Log.e("WebRtcManager", "Set local description failed: $error")
-                            cont.resumeWithException(Exception("Set local desc failed: $error")) 
+                            cont.resumeWithException(Exception("Set local desc failed: $error"))
                         }
                     }, offer)
                 }
@@ -188,16 +208,17 @@ class WebRtcManager(
                 
                 // Set remote description
                 val answerDesc = SessionDescription(SessionDescription.Type.ANSWER, answerSdpString)
-                suspendCoroutine<Unit> { cont ->
+                suspendCancellableCoroutine { cont ->
                     peerConnection?.setRemoteDescription(object : SdpObserver {
                         override fun onCreateSuccess(p0: SessionDescription?) {}
-                        override fun onSetSuccess() { 
-                            cont.resume(Unit) 
+                        override fun onSetSuccess() {
+                            cont.resume(Unit)
                         }
+
                         override fun onCreateFailure(p0: String?) {}
-                        override fun onSetFailure(error: String?) { 
+                        override fun onSetFailure(error: String?) {
                             Log.e("WebRtcManager", "Set remote description failed: $error")
-                            cont.resumeWithException(Exception("Set remote desc failed: $error")) 
+                            cont.resumeWithException(Exception("Set remote desc failed: $error"))
                         }
                     }, answerDesc)
                 }
@@ -219,7 +240,12 @@ class WebRtcManager(
     fun disconnect() {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         audioManager.mode = AudioManager.MODE_NORMAL
-        audioManager.clearCommunicationDevice()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            audioManager.clearCommunicationDevice()
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = false
+        }
 
         coroutineScope.launch(Dispatchers.IO) {
             signalingClient.disconnect()
@@ -231,28 +257,34 @@ class WebRtcManager(
     }
 
     private fun setOptimalAudioDevice(audioManager: AudioManager) {
-        val devices = audioManager.availableCommunicationDevices
-        
-        val hasHeadset = devices.any {
-            it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-            it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-            it.type == 26 /* TYPE_BLE_HEADSET */ ||
-            it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET ||
-            it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
-            it.type == android.media.AudioDeviceInfo.TYPE_USB_HEADSET
-        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            val devices = audioManager.availableCommunicationDevices
+            
+            val hasHeadset = devices.any {
+                it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                it.type == 26 /* TYPE_BLE_HEADSET */ ||
+                it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                it.type == android.media.AudioDeviceInfo.TYPE_USB_HEADSET
+            }
 
-        if (!hasHeadset) {
-            // No headset connected. Android will default to the Earpiece in communication mode.
-            // We want it to use the loud built-in speaker instead.
-            val speaker = devices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-            if (speaker != null) {
-                audioManager.setCommunicationDevice(speaker)
+            if (!hasHeadset) {
+                // No headset connected. Android will default to the Earpiece in communication mode.
+                // We want it to use the loud built-in speaker instead.
+                val speaker = devices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                if (speaker != null) {
+                    audioManager.setCommunicationDevice(speaker)
+                }
+            } else {
+                // A headset is connected! Do absolutely nothing and let Android's native
+                // automatic routing handle it instantly.
+                audioManager.clearCommunicationDevice()
             }
         } else {
-            // A headset is connected! Do absolutely nothing and let Android's native
-            // automatic routing handle it instantly.
-            audioManager.clearCommunicationDevice()
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn =
+                !audioManager.isWiredHeadsetOn && !audioManager.isBluetoothScoOn && !audioManager.isBluetoothA2dpOn
         }
     }
 }
