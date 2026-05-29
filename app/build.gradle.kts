@@ -12,7 +12,7 @@ android {
     defaultConfig {
         applicationId = "com.novasoftware.hadoorbell"
         minSdk = 26
-        //noinspection OldTargetApi,ExpiredTargetSdkVersion
+        //noinspection EditedTargetSdkVersion,OldTargetApi,ExpiredTargetSdkVersion
         targetSdk = 36
         versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
         versionName = (project.findProperty("versionName") as String?) ?: "1.0"
@@ -53,6 +53,7 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            isReturnDefaultValues = true
         }
     }
     compileOptions {
@@ -65,6 +66,11 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            keepDebugSymbols += setOf(
+                "**/libandroidx.graphics.path.so",
+                "**/libdatastore_shared_counter.so",
+                "**/libjingle_peerconnection_so.so"
+            )
         }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

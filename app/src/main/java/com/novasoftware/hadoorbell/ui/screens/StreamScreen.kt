@@ -99,6 +99,9 @@ fun StreamScreen(
                     val streamSource = appPreferences.streamSourceFlow.first() ?: ""
                     quickReplyEntityId = appPreferences.quickReplyEntityIdFlow.first() ?: ""
                     lockEntityId = appPreferences.lockEntityIdFlow.first() ?: ""
+                    
+                    val instantTwoWay = appPreferences.instantTwoWayAudioFlow.first()
+                    isMicEnabled = instantTwoWay && quickReplyEntityId.isBlank()
 
                     apiClient = HomeAssistantApiClient(url, token)
                     

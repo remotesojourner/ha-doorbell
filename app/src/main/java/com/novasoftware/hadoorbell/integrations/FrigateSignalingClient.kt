@@ -21,7 +21,7 @@ class FrigateSignalingClient(
     private var webSocket: WebSocket? = null
     private val gson = Gson()
     private var pendingOfferContinuation: kotlin.coroutines.Continuation<String>? = null
-    private val iceCandidatesFlow = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 100)
+    private val iceCandidatesFlow = kotlinx.coroutines.flow.MutableSharedFlow<String>(replay = 100)
 
     private suspend fun getSignedUrl(): String = suspendCancellableCoroutine { continuation ->
         val wsUrl = haUrl.trimEnd('/') + "/api/websocket"

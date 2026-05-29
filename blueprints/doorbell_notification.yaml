@@ -1,0 +1,113 @@
+blueprint:
+  name: HA Doorbell Fast Notification
+  description: "Downloads a fast snapshot using the Downloader integration and sends an actionable notification to your device that opens the HA Doorbell app."
+  domain: automation
+  input:
+    doorbell_sensor:
+      name: Doorbell Sensor
+      description: The binary sensor that triggers when the doorbell is pressed.
+      selector:
+        entity:
+          domain: binary_sensor
+    notify_service:
+      name: Notify Service
+      description: The notification service to use (e.g., notify.mobile_devices or notify.mobile_app_my_phone).
+      default: notify.mobile_devices
+      selector:
+        text:
+    camera_snapshot_url:
+      name: Camera Snapshot URL
+      description: The raw HTTP URL to grab a fast snapshot directly from your camera (e.g., Reolink snapshot CGI API).
+      selector:
+        text:
+    notification_title:
+      name: Notification Title
+      default: There is somebody at the door!
+      selector:
+        text:
+    notification_channel:
+      name: Android Notification Channel
+      description: The notification channel ID for Android devices (e.g., alarm_stream).
+      default: alarm_stream
+      selector:
+        text:
+    notification_ttl:
+      name: Notification TTL
+      description: Time to live for the notification (0 for instant delivery).
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 86400
+          mode: box
+    notification_priority:
+      name: Notification Priority
+      description: Priority of the notification (high ensures immediate delivery).
+      default: high
+      selector:
+        select:
+          options:
+            - high
+            - default
+            - low
+            - min
+            - max
+    snapshot_file_name:
+      name: Snapshot File Name
+      description: The filename to save the snapshot as (e.g., snapshot_doorbell.jpg).
+      default: snapshot_doorbell.jpg
+      selector:
+        text:
+    downloader_path:
+      name: Downloader WWW Subdirectory
+      description: The subfolder inside your www folder where snapshots are saved (e.g., doorbell).
+      default: doorbell
+      selector:
+        text:
+    wait_timeout:
+      name: Download Wait Timeout
+      description: Maximum time to wait for the snapshot download to complete (HH:MM:SS).
+      default: "00:10:00"
+      selector:
+        text:
+
+mode: single
+
+variables:
+  camera_snapshot_url: !input camera_snapshot_url
+  notification_title: !input notification_title
+  notification_channel: !input notification_channel
+  notification_ttl: !input notification_ttl
+  notification_priority: !input notification_priority
+  snapshot_file_name: !input snapshot_file_name
+  downloader_path: !input downloader_path
+  wait_timeout: !input wait_timeout
+
+triggers:
+  - trigger: state
+    entity_id: !input doorbell_sensor
+    from: "off"
+    to: "on"
+
+actions:
+  - action: downloader.download_file
+    data:
+      url: "{{ camera_snapshot_url }}"
+      filename: "{{ snapshot_file_name }}"
+      overwrite: true
+  - wait_for_trigger:
+      - trigger: event
+        event_type: downloader_download_completed
+    timeout: "{{ wait_timeout }}"
+    continue_on_timeout: false
+  - action: !input notify_service
+    data:
+      title: "{{ notification_title }}"
+      message: "{{ as_timestamp(now()) | timestamp_custom('%d:%m %H:%M', true) }}"
+      data:
+        ttl: "{{ notification_ttl }}"
+        priority: "{{ notification_priority }}"
+        channel: "{{ notification_channel }}"
+        image: "/local/{{ downloader_path }}/{{ snapshot_file_name }}"
+        notification_icon: mdi:doorbell-video
+        clickAction: "app://com.novasoftware.hadoorbell"

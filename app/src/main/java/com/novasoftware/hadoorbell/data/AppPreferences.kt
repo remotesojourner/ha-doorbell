@@ -3,6 +3,7 @@ package com.novasoftware.hadoorbell.data
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -18,6 +19,7 @@ class AppPreferences(private val context: Context) {
         val STREAM_SOURCE = stringPreferencesKey("stream_source")
         val QUICK_REPLY_ENTITY_ID = stringPreferencesKey("quick_reply_entity_id")
         val LOCK_ENTITY_ID = stringPreferencesKey("lock_entity_id")
+        val INSTANT_TWO_WAY_AUDIO = booleanPreferencesKey("instant_two_way_audio")
     }
 
     val haUrlFlow: Flow<String?> = context.dataStore.data.map { it[HA_URL]?.trim() }
@@ -25,8 +27,9 @@ class AppPreferences(private val context: Context) {
     val streamSourceFlow: Flow<String?> = context.dataStore.data.map { it[STREAM_SOURCE]?.trim() }
     val quickReplyEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[QUICK_REPLY_ENTITY_ID]?.trim() }
     val lockEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[LOCK_ENTITY_ID]?.trim() }
+    val instantTwoWayAudioFlow: Flow<Boolean> = context.dataStore.data.map { it[INSTANT_TWO_WAY_AUDIO] ?: false }
 
-    suspend fun saveSettings(url: String, token: String, source: String, quickReplyEntityId: String, lockEntityId: String) {
+    suspend fun saveSettings(url: String, token: String, source: String, quickReplyEntityId: String, lockEntityId: String, instantTwoWayAudio: Boolean = false) {
         context.dataStore.edit { preferences ->
             var finalUrl = url.trim().trimEnd('/')
             if (finalUrl.isNotBlank() && !finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
@@ -37,6 +40,7 @@ class AppPreferences(private val context: Context) {
             preferences[STREAM_SOURCE] = source.trim()
             preferences[QUICK_REPLY_ENTITY_ID] = quickReplyEntityId.trim()
             preferences[LOCK_ENTITY_ID] = lockEntityId.trim()
+            preferences[INSTANT_TWO_WAY_AUDIO] = instantTwoWayAudio
         }
     }
 }

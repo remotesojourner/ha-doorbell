@@ -1,5 +1,6 @@
 package com.novasoftware.hadoorbell.integrations
 
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import okhttp3.Response
@@ -32,7 +33,12 @@ class FrigateSignalingClientTest {
 
     @After
     fun teardown() {
-        mockWebServer.shutdown()
+        try {
+            mockWebServer.shutdown()
+        } catch (_: Throwable) {
+            // MockWebServer sometimes throws "Gave up waiting for queue to shut down"
+            // if WebSockets are still partially open during teardown.
+        }
     }
 
     @Test
@@ -40,11 +46,13 @@ class FrigateSignalingClientTest {
         // We need to enqueue a WebSocket response for the auth phase
         mockWebServer.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                println("TEST: First websocket onOpen")
                 // Trigger auth_required
                 webSocket.send("""{"type": "auth_required"}""")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                println("TEST: First websocket received message: $text")
                 if (text.contains("auth\"") && text.contains("test_token")) {
                     webSocket.send("""{"type": "auth_ok"}""")
                 } else if (text.contains("auth/sign_path")) {
@@ -63,7 +71,11 @@ class FrigateSignalingClientTest {
 
         // Enqueue the second WebSocket response for the actual stream
         mockWebServer.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                println("TEST: Second websocket onOpen")
+            }
             override fun onMessage(webSocket: WebSocket, text: String) {
+                println("TEST: Second websocket received message: $text")
                 if (text.contains("webrtc/offer")) {
                     webSocket.send("""{"type": "webrtc/answer", "value": "mock_sdp_answer"}""")
                     webSocket.send("""{"type": "webrtc/candidate", "value": "mock_ice_candidate"}""")
@@ -72,14 +84,23 @@ class FrigateSignalingClientTest {
         }))
 
         // Test connecting
+        println("TEST: Calling connect()")
         signalingClient.connect()
+        println("TEST: connect() returned")
 
-        // Test sending an offer
+        // Test sending an offer and capturing the ICE candidate simultaneously
+        println("TEST: Async waiting for candidate")
+        val candidateDeferred = async { signalingClient.getIceCandidates().first() }
+        
+        println("TEST: Calling sendOffer")
         val answer = signalingClient.sendOffer("mock_sdp_offer")
+        println("TEST: sendOffer returned: $answer")
         assertEquals("mock_sdp_answer", answer)
 
-        // Test ICE candidates flow
-        val candidate = signalingClient.getIceCandidates().first()
+        // Verify ICE candidates flow received the candidate
+        println("TEST: Awaiting candidateDeferred")
+        val candidate = candidateDeferred.await()
+        println("TEST: candidateDeferred returned: $candidate")
         assertEquals("mock_ice_candidate", candidate)
         
         signalingClient.disconnect()

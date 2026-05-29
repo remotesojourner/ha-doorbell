@@ -2,6 +2,7 @@ package com.novasoftware.hadoorbell.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -35,7 +37,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -57,6 +61,7 @@ fun SettingsScreen(
     var streamSource by remember { mutableStateOf("") }
     var quickReplyEntityId by remember { mutableStateOf("") }
     var lockEntityId by remember { mutableStateOf("") }
+    var instantTwoWayAudio by remember { mutableStateOf(false) }
 
     // Load initial values
     LaunchedEffect(Unit) {
@@ -73,6 +78,15 @@ fun SettingsScreen(
     }
     LaunchedEffect(Unit) {
         appPreferences.lockEntityIdFlow.collect { lockEntityId = it ?: "" }
+    }
+    LaunchedEffect(Unit) {
+        appPreferences.instantTwoWayAudioFlow.collect { instantTwoWayAudio = it }
+    }
+
+    LaunchedEffect(quickReplyEntityId) {
+        if (quickReplyEntityId.isNotBlank()) {
+            instantTwoWayAudio = false
+        }
     }
 
     Scaffold(
@@ -95,7 +109,7 @@ fun SettingsScreen(
             ExtendedFloatingActionButton(
                 onClick = {
                     coroutineScope.launch {
-                        appPreferences.saveSettings(url, token, streamSource, quickReplyEntityId, lockEntityId)
+                        appPreferences.saveSettings(url, token, streamSource, quickReplyEntityId, lockEntityId, instantTwoWayAudio)
                         onSave()
                     }
                 },
@@ -232,6 +246,24 @@ fun SettingsScreen(
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Connect in 2-way mode instantly",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (quickReplyEntityId.isBlank()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                        Switch(
+                            checked = instantTwoWayAudio,
+                            onCheckedChange = { instantTwoWayAudio = it },
+                            enabled = quickReplyEntityId.isBlank(),
+                            modifier = Modifier.testTag("instant_2way_switch")
+                        )
+                    }
 
                     OutlinedTextField(
                         value = lockEntityId,

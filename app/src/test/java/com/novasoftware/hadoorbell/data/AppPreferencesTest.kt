@@ -32,9 +32,10 @@ class AppPreferencesTest {
         val source = " camera_1 "
         val quickReply = " select.doorbell "
         val lock = " lock.front "
+        val instantTwoWayAudio = true
 
         // When
-        appPreferences.saveSettings(url, token, source, quickReply, lock)
+        appPreferences.saveSettings(url, token, source, quickReply, lock, instantTwoWayAudio)
 
         // Then
         assertEquals("https://192.168.1.100:8123", appPreferences.haUrlFlow.first())
@@ -42,6 +43,7 @@ class AppPreferencesTest {
         assertEquals("camera_1", appPreferences.streamSourceFlow.first())
         assertEquals("select.doorbell", appPreferences.quickReplyEntityIdFlow.first())
         assertEquals("lock.front", appPreferences.lockEntityIdFlow.first())
+        assertEquals(true, appPreferences.instantTwoWayAudioFlow.first())
     }
 
     @Test
@@ -50,7 +52,7 @@ class AppPreferencesTest {
         val url = "http://192.168.1.100:8123"
 
         // When
-        appPreferences.saveSettings(url, "", "", "", "")
+        appPreferences.saveSettings(url, "", "", "", "", false)
 
         // Then
         assertEquals("http://192.168.1.100:8123", appPreferences.haUrlFlow.first())

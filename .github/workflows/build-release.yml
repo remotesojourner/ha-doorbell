@@ -62,11 +62,16 @@ jobs:
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
       run: ./gradlew assembleRelease --stacktrace --no-daemon "-PversionCode=${{ github.run_number }}" "-PversionName=${{ steps.gitversion.outputs.semVer }}"
 
+    - name: Rename APK
+      run: |
+        APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+        mv "$APK_PATH" app/build/outputs/apk/release/com.novasoftware.hadoorbell-${{ steps.gitversion.outputs.semVer }}.apk
+
     - name: Upload Release APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: app-release-${{ steps.gitversion.outputs.semVer }}
-        path: app/build/outputs/apk/release/app-release*.apk
+        name: com.novasoftware.hadoorbell-${{ steps.gitversion.outputs.semVer }}
+        path: app/build/outputs/apk/release/com.novasoftware.hadoorbell-*.apk
 
     - name: Create GitHub Release
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -75,4 +80,4 @@ jobs:
         tag_name: v${{ steps.gitversion.outputs.semVer }}
         name: Release v${{ steps.gitversion.outputs.semVer }}
         generate_release_notes: true
-        files: app/build/outputs/apk/release/app-release*.apk
+        files: app/build/outputs/apk/release/com.novasoftware.hadoorbell-*.apk
