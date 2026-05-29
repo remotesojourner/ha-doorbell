@@ -10,6 +10,7 @@ on:
       - 'blueprints/**'
       - 'screnshots/**'
       - '.github/workflows/**'
+      - 'assets/**'
   pull_request:
     branches: [ "main" ]
     paths-ignore:
@@ -19,6 +20,7 @@ on:
       - 'blueprints/**'
       - 'screnshots/**'
       - '.github/workflows/**'
+      - 'assets/**'
   workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
 
 permissions:

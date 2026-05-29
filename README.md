@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" width="128" alt="App Logo" /><br><br>
+  <img src="assets/logo.svg" width="250" alt="App Logo" /><br><br>
 </p>
 
 # HA Doorbell
