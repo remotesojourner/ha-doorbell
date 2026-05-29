@@ -3,8 +3,22 @@ name: Build Release APK
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - 'README.md'
+      - 'AI-DECLARATION.md'
+      - 'LICENSE.txt'
+      - 'blueprints/**'
+      - 'screnshots/**'
+      - '.github/workflows/**'
   pull_request:
     branches: [ "main" ]
+    paths-ignore:
+      - 'README.md'
+      - 'AI-DECLARATION.md'
+      - 'LICENSE.txt'
+      - 'blueprints/**'
+      - 'screnshots/**'
+      - '.github/workflows/**'
   workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
 
 permissions:
