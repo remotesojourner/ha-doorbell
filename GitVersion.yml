@@ -1,0 +1,7 @@
+mode: ContinuousDeployment
+
+# Conventional Commits configuration (GitVersion 6.x syntax)
+commit-message-incrementing: Enabled
+major-version-bump-message: '^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z ]+\))?!:|^BREAKING CHANGE:'
+minor-version-bump-message: '^(feat)(\([a-z ]+\))?:'
+patch-version-bump-message: '^(fix|perf|refactor|revert)(\([a-z ]+\))?:'
