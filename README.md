@@ -35,8 +35,8 @@ When you first launch the app, you will be prompted for:
 
 ### Optional Integrations
 
-- **Quick Reply Entity ID**: Provide the ID of a `select` entity (e.g., `select.doorbell_quick_reply`) to enable instant pre-recorded messages e.g. You can get this through reolink integration in home assistant. 
-- **Connect in 2-way mode instantly**: If you leave the Quick Reply Entity ID blank, you can optionally enable this toggle. It forces the app to skip the initial receive-only mode and hook directly into 2-way audio when the stream opens.
+- **Connect in 2-way mode instantly**: Optionally enable this toggle to skip the initial receive-only mode and hook directly into 2-way audio when the stream opens. *(Note: This feature is mutually exclusive with Quick Replies).*
+- **Quick Reply Entity ID**: Provide the ID of a `select` entity (e.g., `select.doorbell_quick_reply`) to enable instant pre-recorded messages. Entering an entity here will automatically disable the instant 2-way mode above to prevent audio conflicts.
 - **Door Lock Entity ID**: Provide the ID of a `lock` entity (e.g., `lock.front_door`) to add a biometric-protected unlock button to the camera feed.
 
 ## Development

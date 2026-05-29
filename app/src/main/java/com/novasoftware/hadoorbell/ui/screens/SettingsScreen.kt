@@ -237,18 +237,8 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    OutlinedTextField(
-                        value = quickReplyEntityId,
-                        onValueChange = { quickReplyEntityId = it },
-                        label = { Text("Quick Reply Entity ID") },
-                        placeholder = { Text("select.doorbell_quick_reply") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
-                    )
-
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -264,6 +254,16 @@ fun SettingsScreen(
                             modifier = Modifier.testTag("instant_2way_switch")
                         )
                     }
+
+                    OutlinedTextField(
+                        value = quickReplyEntityId,
+                        onValueChange = { quickReplyEntityId = it },
+                        label = { Text("Quick Reply Entity ID") },
+                        placeholder = { Text("select.doorbell_quick_reply") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
 
                     OutlinedTextField(
                         value = lockEntityId,
