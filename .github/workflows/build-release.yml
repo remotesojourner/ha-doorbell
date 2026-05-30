@@ -9,7 +9,7 @@ on:
       - 'LICENSE.txt'
       - 'blueprints/**'
       - 'screnshots/**'
-      - '.github/workflows/**'
+      - '.github/**'
       - 'assets/**'
   pull_request:
     branches: [ "main" ]
@@ -19,7 +19,7 @@ on:
       - 'LICENSE.txt'
       - 'blueprints/**'
       - 'screnshots/**'
-      - '.github/workflows/**'
+      - '.github/**'
       - 'assets/**'
   workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
 
