@@ -19,3 +19,4 @@ build/
 app/build/
 *.keystore
 /app/keystore_base64.txt
+/.kotlin/sessions

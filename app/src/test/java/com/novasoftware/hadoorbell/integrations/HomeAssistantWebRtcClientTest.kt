@@ -13,10 +13,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 
-class FrigateSignalingClientTest {
+class HomeAssistantWebRtcClientTest {
 
     private lateinit var mockWebServer: MockWebServer
-    private lateinit var signalingClient: FrigateSignalingClient
+    private lateinit var signalingClient: HomeAssistantWebRtcClient
 
     @Before
     fun setup() {
@@ -24,7 +24,7 @@ class FrigateSignalingClientTest {
         mockWebServer.start()
 
         val baseUrl = mockWebServer.url("/").toString()
-        signalingClient = FrigateSignalingClient(
+        signalingClient = HomeAssistantWebRtcClient(
             haUrl = baseUrl,
             token = "test_token",
             streamName = "front_door"
@@ -42,7 +42,8 @@ class FrigateSignalingClientTest {
     }
 
     @Test
-    fun `connect authenticates and connects to stream websocket`() = runBlocking {
+    fun `connect authenticates and connects to stream websocket using default frigate provider`() = runBlocking {
+        var isPathCorrect = false
         // We need to enqueue a WebSocket response for the auth phase
         mockWebServer.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -56,6 +57,7 @@ class FrigateSignalingClientTest {
                 if (text.contains("auth\"") && text.contains("test_token")) {
                     webSocket.send("""{"type": "auth_ok"}""")
                 } else if (text.contains("auth/sign_path")) {
+                    isPathCorrect = text.contains("api/frigate/frigate/mse/api/ws")
                     // Send back a successful signed path pointing to a second mock websocket
                     webSocket.send("""
                         {
@@ -104,5 +106,52 @@ class FrigateSignalingClientTest {
         assertEquals("mock_ice_candidate", candidate)
         
         signalingClient.disconnect()
+        
+        // Assert the correct path was requested
+        assert(isPathCorrect)
+    }
+
+    @Test
+    fun `connect authenticates and connects to stream websocket using webrtc provider`() = runBlocking {
+        var isPathCorrect = false
+        val webrtcClient = HomeAssistantWebRtcClient(
+            haUrl = mockWebServer.url("/").toString(),
+            token = "test_token",
+            streamName = "front_door",
+            provider = "webrtc"
+        )
+
+        mockWebServer.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                webSocket.send("""{"type": "auth_required"}""")
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                if (text.contains("auth\"") && text.contains("test_token")) {
+                    webSocket.send("""{"type": "auth_ok"}""")
+                } else if (text.contains("auth/sign_path")) {
+                    isPathCorrect = text.contains("api/webrtc/ws")
+                    webSocket.send("""
+                        {
+                            "id": 1,
+                            "type": "result",
+                            "success": true,
+                            "result": { "path": "/api/stream/ws" }
+                        }
+                    """.trimIndent())
+                }
+            }
+        }))
+
+        mockWebServer.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {}
+            override fun onMessage(webSocket: WebSocket, text: String) {}
+        }))
+
+        webrtcClient.connect()
+        webrtcClient.disconnect()
+
+        // Assert the correct path was requested
+        assert(isPathCorrect)
     }
 }

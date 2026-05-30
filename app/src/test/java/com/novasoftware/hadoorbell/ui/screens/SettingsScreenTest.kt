@@ -57,7 +57,7 @@ class SettingsScreenTest {
         composeTestRule.onNodeWithText("Doorbell Setup").assertIsDisplayed()
         composeTestRule.onNodeWithText("Home Assistant URL").assertIsDisplayed()
         composeTestRule.onNodeWithText("Long-Lived Access Token").assertIsDisplayed()
-        composeTestRule.onNodeWithText("go2rtc Stream Name").assertIsDisplayed()
+        composeTestRule.onNodeWithText("go2rtc Stream Name").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Quick Reply Entity ID").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Door Lock Entity ID").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Save & Connect", useUnmergedTree = true).assertIsDisplayed()
@@ -83,6 +83,7 @@ class SettingsScreenTest {
             .performTextInput("http://test.local:8123")
         
         composeTestRule.onNodeWithText("go2rtc Stream Name")
+            .performScrollTo()
             .performTextInput("camera1")
 
         // Click save
@@ -137,5 +138,26 @@ class SettingsScreenTest {
         switchNode.performClick()
         composeTestRule.waitForIdle()
         switchNode.assertIsOn()
+    }
+
+    @Test
+    fun `webrtc provider options are displayed and can be selected`() {
+        composeTestRule.setContent {
+            androidx.compose.material3.MaterialTheme {
+                SettingsScreen(
+                    appPreferences = appPreferences,
+                    onSave = {}, onCancel = {}, canCancel = false
+                )
+            }
+        }
+
+        // Verify elements exist
+        composeTestRule.onNodeWithText("Home Assistant Integration").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Frigate").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("AlexxIT/WebRTC").performScrollTo().assertIsDisplayed()
+
+        // Select AlexxIT/WebRTC
+        composeTestRule.onNodeWithText("AlexxIT/WebRTC").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
     }
 }

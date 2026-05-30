@@ -9,7 +9,7 @@
 [![License: GPL v3](https://img.shields.io/badge/license-GPL--v3-blue?style=flat&logo=gnu)](LICENSE.txt)
 [![AI-DECLARATION: auto](https://img.shields.io/badge/䷼%20AI--DECLARATION-auto-ede9fe?labelColor=ede9fe)](AI-DECLARATION.md)
 
-An Android doorbell application built for Home Assistant. Integrates with Frigate's built-in `go2rtc` proxy for 2-way audio and video streaming.
+An Android doorbell application built for Home Assistant. Integrates with built-in `go2rtc` from the Frigate or AlexxIT/WebRTC integrations for 2-way audio and video streaming.
 
 ## Features
 
@@ -20,10 +20,10 @@ An Android doorbell application built for Home Assistant. Integrates with Frigat
 
 ## Requirements
 
-This app directly hooks into Frigate for 2-way audio support.
+This app directly hooks into Frigate or AlexxIT/WebRTC for 2-way audio support.
 
 1. **Home Assistant**
-2. **Frigate Integration** 
+2. **Frigate Integration** OR **AlexxIT/WebRTC Integration** 
 
 ## App Setup
 
@@ -34,6 +34,7 @@ When you first launch the app, you will be prompted for:
 3. **go2rtc Stream Name**: The exact name of the camera stream as configured in Frigate's go2rtc config (e.g., `front_door_camera`).
 
 ### Optional Integrations
+
 
 - **Connect in 2-way mode instantly**: Optionally enable this toggle to skip the initial receive-only mode and hook directly into 2-way audio when the stream opens. *(Note: This feature is mutually exclusive with Quick Replies).*
 - **Quick Reply Entity ID**: Provide the ID of a `select` entity (e.g., `select.doorbell_quick_reply`) to enable instant pre-recorded messages. Entering an entity here will automatically disable the instant 2-way mode above to prevent audio conflicts.

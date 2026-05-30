@@ -11,10 +11,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-class FrigateSignalingClient(
+class HomeAssistantWebRtcClient(
     private val haUrl: String,
     private val token: String,
-    private val streamName: String
+    private val streamName: String,
+    private val provider: String = "frigate"
 ) {
 
     private val client = OkHttpClient()
@@ -39,7 +40,11 @@ class FrigateSignalingClient(
                         val authMsg = mapOf("type" to "auth", "access_token" to token)
                         webSocket.send(gson.toJson(authMsg))
                     } else if (type == "auth_ok") {
-                        val path = "/api/frigate/frigate/mse/api/ws?src=$streamName"
+                        val path = if (provider == "webrtc") {
+                            "/api/webrtc/ws?url=$streamName"
+                        } else {
+                            "/api/frigate/frigate/mse/api/ws?src=$streamName"
+                        }
                         val signMsg = mapOf(
                             "id" to 1,
                             "type" to "auth/sign_path",
@@ -116,12 +121,12 @@ class FrigateSignalingClient(
                                 pendingOfferContinuation = null
                             }
                         } catch (e: Exception) {
-                            Log.e("FrigateSignaling", "Error parsing message", e)
+                            Log.e("HomeAssistantWebRtc", "Error parsing message", e)
                         }
                     }
 
                     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                        Log.e("FrigateSignaling", "WebSocket failure", t)
+                        Log.e("HomeAssistantWebRtc", "WebSocket failure", t)
                         if (continuation.isActive) continuation.resumeWithException(t)
                         pendingOfferContinuation?.resumeWithException(t)
                         pendingOfferContinuation = null

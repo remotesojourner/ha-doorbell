@@ -62,6 +62,7 @@ fun SettingsScreen(
     var quickReplyEntityId by remember { mutableStateOf("") }
     var lockEntityId by remember { mutableStateOf("") }
     var instantTwoWayAudio by remember { mutableStateOf(false) }
+    var webrtcProvider by remember { mutableStateOf("frigate") }
 
     // Load initial values
     LaunchedEffect(Unit) {
@@ -81,6 +82,9 @@ fun SettingsScreen(
     }
     LaunchedEffect(Unit) {
         appPreferences.instantTwoWayAudioFlow.collect { instantTwoWayAudio = it }
+    }
+    LaunchedEffect(Unit) {
+        appPreferences.webrtcProviderFlow.collect { webrtcProvider = it }
     }
 
     LaunchedEffect(quickReplyEntityId) {
@@ -109,7 +113,7 @@ fun SettingsScreen(
             ExtendedFloatingActionButton(
                 onClick = {
                     coroutineScope.launch {
-                        appPreferences.saveSettings(url, token, streamSource, quickReplyEntityId, lockEntityId, instantTwoWayAudio)
+                        appPreferences.saveSettings(url, token, streamSource, quickReplyEntityId, lockEntityId, instantTwoWayAudio, webrtcProvider)
                         onSave()
                     }
                 },
@@ -194,7 +198,33 @@ fun SettingsScreen(
                     )
                     
                     Text(
-                        "Go2rtc stream name that supports 2 way audio from Frigate",
+                        "Home Assistant Integration",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.RadioButton(
+                                selected = webrtcProvider == "frigate",
+                                onClick = { webrtcProvider = "frigate" }
+                            )
+                            Text("Frigate")
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.RadioButton(
+                                selected = webrtcProvider == "webrtc",
+                                onClick = { webrtcProvider = "webrtc" }
+                            )
+                            Text("AlexxIT/WebRTC")
+                        }
+                    }
+                    
+                    Text(
+                        "Go2rtc stream name that supports 2 way audio",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

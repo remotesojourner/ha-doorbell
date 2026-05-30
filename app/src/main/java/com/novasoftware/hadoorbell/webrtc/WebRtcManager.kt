@@ -3,7 +3,7 @@ package com.novasoftware.hadoorbell.webrtc
 import android.content.Context
 import android.media.AudioManager
 import android.util.Log
-import com.novasoftware.hadoorbell.integrations.FrigateSignalingClient
+import com.novasoftware.hadoorbell.integrations.HomeAssistantWebRtcClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,7 +31,7 @@ import kotlin.coroutines.resumeWithException
 
 class WebRtcManager(
     private val context: Context,
-    private val signalingClient: FrigateSignalingClient,
+    private val signalingClient: HomeAssistantWebRtcClient,
     private val coroutineScope: CoroutineScope
 ) {
     private var peerConnectionFactory: PeerConnectionFactory? = null

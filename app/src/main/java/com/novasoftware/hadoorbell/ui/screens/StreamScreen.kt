@@ -4,7 +4,7 @@ import android.widget.Toast
 import androidx.compose.animation.core.*
 import com.novasoftware.hadoorbell.data.AppPreferences
 import com.novasoftware.hadoorbell.integrations.HomeAssistantApiClient
-import com.novasoftware.hadoorbell.integrations.FrigateSignalingClient
+import com.novasoftware.hadoorbell.integrations.HomeAssistantWebRtcClient
 import com.novasoftware.hadoorbell.webrtc.WebRtcManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -98,6 +98,7 @@ fun StreamScreen(
                     val url = appPreferences.haUrlFlow.first() ?: ""
                     val token = appPreferences.haTokenFlow.first() ?: ""
                     val streamSource = appPreferences.streamSourceFlow.first() ?: ""
+                    val provider = appPreferences.webrtcProviderFlow.first()
                     quickReplyEntityId = appPreferences.quickReplyEntityIdFlow.first() ?: ""
                     lockEntityId = appPreferences.lockEntityIdFlow.first() ?: ""
                     
@@ -114,7 +115,7 @@ fun StreamScreen(
                         }
                     }
 
-                    val signalingClient = FrigateSignalingClient(url, token, streamSource)
+                    val signalingClient = HomeAssistantWebRtcClient(url, token, streamSource, provider)
 
                     webRtcManager = WebRtcManager(context, signalingClient, coroutineScope)
                 }
@@ -315,8 +316,9 @@ fun StreamScreen(
                             val url = appPreferences.haUrlFlow.first() ?: ""
                             val token = appPreferences.haTokenFlow.first() ?: ""
                             val streamSource = appPreferences.streamSourceFlow.first() ?: ""
+                            val provider = appPreferences.webrtcProviderFlow.first()
                             
-                            val signalingClient = FrigateSignalingClient(url, token, streamSource)
+                            val signalingClient = HomeAssistantWebRtcClient(url, token, streamSource, provider)
                             webRtcManager = WebRtcManager(context, signalingClient, coroutineScope)
                             isSwitchingModes = false
                         }

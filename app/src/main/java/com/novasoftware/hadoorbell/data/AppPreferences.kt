@@ -20,6 +20,7 @@ class AppPreferences(private val context: Context) {
         val QUICK_REPLY_ENTITY_ID = stringPreferencesKey("quick_reply_entity_id")
         val LOCK_ENTITY_ID = stringPreferencesKey("lock_entity_id")
         val INSTANT_TWO_WAY_AUDIO = booleanPreferencesKey("instant_two_way_audio")
+        val WEBRTC_PROVIDER = stringPreferencesKey("webrtc_provider")
     }
 
     val haUrlFlow: Flow<String?> = context.dataStore.data.map { it[HA_URL]?.trim() }
@@ -28,8 +29,9 @@ class AppPreferences(private val context: Context) {
     val quickReplyEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[QUICK_REPLY_ENTITY_ID]?.trim() }
     val lockEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[LOCK_ENTITY_ID]?.trim() }
     val instantTwoWayAudioFlow: Flow<Boolean> = context.dataStore.data.map { it[INSTANT_TWO_WAY_AUDIO] ?: false }
+    val webrtcProviderFlow: Flow<String> = context.dataStore.data.map { it[WEBRTC_PROVIDER] ?: "frigate" }
 
-    suspend fun saveSettings(url: String, token: String, source: String, quickReplyEntityId: String, lockEntityId: String, instantTwoWayAudio: Boolean = false) {
+    suspend fun saveSettings(url: String, token: String, source: String, quickReplyEntityId: String, lockEntityId: String, instantTwoWayAudio: Boolean = false, provider: String = "frigate") {
         context.dataStore.edit { preferences ->
             var finalUrl = url.trim().trimEnd('/')
             if (finalUrl.isNotBlank() && !finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
@@ -41,6 +43,7 @@ class AppPreferences(private val context: Context) {
             preferences[QUICK_REPLY_ENTITY_ID] = quickReplyEntityId.trim()
             preferences[LOCK_ENTITY_ID] = lockEntityId.trim()
             preferences[INSTANT_TWO_WAY_AUDIO] = instantTwoWayAudio
+            preferences[WEBRTC_PROVIDER] = provider
         }
     }
 }
