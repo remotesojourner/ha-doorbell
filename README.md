@@ -31,7 +31,7 @@ When you first launch the app, you will be prompted for:
 
 1. **Home Assistant URL**: The local or remote URL to your Home Assistant instance that is accessible from the device. (e.g., `http://192.168.1.100:8123`).
 2. **Long-Lived Access Token**: Generate this in your Home Assistant user profile.
-3. **go2rtc Stream Name**: The exact name of the camera stream as configured in Frigate's go2rtc config (e.g., `front_door_camera`).
+3. **go2rtc Stream Name**: The exact name of the camera stream as configured in go2rtc config (e.g., `front_door_camera`).
 
 ### Optional Integrations
 
