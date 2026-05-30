@@ -427,20 +427,41 @@ fun StreamScreen(
                                 executeLockAction()
                             } else {
                                 // Require biometrics for unlocking
-                                val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                                val cryptoObject = com.novasoftware.hadoorbell.utils.BiometricHelper.getCryptoObject()
+                                
+                                val promptInfoBuilder = BiometricPrompt.PromptInfo.Builder()
                                     .setTitle("Unlock Door")
                                     .setSubtitle("Authenticate to unlock")
-                                    .setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK or androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
-                                    .build()
+                                
+                                if (cryptoObject != null) {
+                                    promptInfoBuilder.setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                                } else {
+                                    promptInfoBuilder.setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK or androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                                }
+                                val promptInfo = promptInfoBuilder.build()
 
                                 val biometricPrompt = BiometricPrompt(fragmentActivity, executor,
                                     object : BiometricPrompt.AuthenticationCallback() {
                                         override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                                             super.onAuthenticationSucceeded(result)
-                                            executeLockAction()
+                                            if (cryptoObject != null) {
+                                                try {
+                                                    result.cryptoObject?.cipher?.doFinal("unlock".toByteArray())
+                                                    executeLockAction()
+                                                } catch (e: Exception) {
+                                                    Toast.makeText(context, "Authentication bypassed or invalid!", Toast.LENGTH_LONG).show()
+                                                }
+                                            } else {
+                                                executeLockAction()
+                                            }
                                         }
                                     })
-                                biometricPrompt.authenticate(promptInfo)
+                                
+                                if (cryptoObject != null) {
+                                    biometricPrompt.authenticate(promptInfo, cryptoObject)
+                                } else {
+                                    biometricPrompt.authenticate(promptInfo)
+                                }
                             }
                         }
                     },
