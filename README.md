@@ -134,7 +134,7 @@ variables:
 ## Screenshots
 
 <p align="center">
-  <img src="screnshots/stream.png" width="30%" alt="Stream Screen" />
-  <img src="screnshots/quickreply.png" width="30%" alt="Quick Replies" />
-  <img src="screnshots/settings.png" width="30%" alt="Settings Screen" />
+  <img src="screenshots/stream.png" width="30%" alt="Stream Screen" />
+  <img src="screenshots/quickreply.png" width="30%" alt="Quick Replies" />
+  <img src="screenshots/settings.png" width="30%" alt="Settings Screen" />
 </p>
