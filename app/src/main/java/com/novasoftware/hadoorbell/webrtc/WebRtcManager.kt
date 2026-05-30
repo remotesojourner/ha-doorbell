@@ -42,6 +42,7 @@ class WebRtcManager(
     private var eglBase: EglBase? = null
     private var audioDeviceModule: JavaAudioDeviceModule? = null
     private var connectionJob: kotlinx.coroutines.Job? = null
+    private var audioDeviceCallback: android.media.AudioDeviceCallback? = null
 
     init {
         synchronized(WebRtcManager::class.java) {
@@ -70,6 +71,18 @@ class WebRtcManager(
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         setOptimalAudioDevice(audioManager)
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            audioDeviceCallback = object : android.media.AudioDeviceCallback() {
+                override fun onAudioDevicesAdded(addedDevices: Array<out android.media.AudioDeviceInfo>?) {
+                    setOptimalAudioDevice(audioManager)
+                }
+                override fun onAudioDevicesRemoved(removedDevices: Array<out android.media.AudioDeviceInfo>?) {
+                    setOptimalAudioDevice(audioManager)
+                }
+            }
+            audioManager.registerAudioDeviceCallback(audioDeviceCallback, null)
+        }
 
         connectionJob = coroutineScope.launch {
             try {
@@ -244,12 +257,22 @@ class WebRtcManager(
     fun disconnect(): kotlinx.coroutines.Job {
         connectionJob?.cancel()
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            audioDeviceCallback?.let {
+                audioManager.unregisterAudioDeviceCallback(it)
+                audioDeviceCallback = null
+            }
+        }
+
         audioManager.mode = AudioManager.MODE_NORMAL
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             audioManager.clearCommunicationDevice()
         } else {
             @Suppress("DEPRECATION")
             audioManager.isSpeakerphoneOn = false
+            @Suppress("DEPRECATION")
+            audioManager.stopBluetoothSco()
         }
 
         return coroutineScope.launch(Dispatchers.IO) {
@@ -269,7 +292,7 @@ class WebRtcManager(
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             val devices = audioManager.availableCommunicationDevices
             
-            val hasHeadset = devices.any {
+            val headset = devices.firstOrNull {
                 it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
                 it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
                 it.type == 26 /* TYPE_BLE_HEADSET */ ||
@@ -278,22 +301,36 @@ class WebRtcManager(
                 it.type == android.media.AudioDeviceInfo.TYPE_USB_HEADSET
             }
 
-            if (!hasHeadset) {
-                // No headset connected. Android will default to the Earpiece in communication mode.
-                // We want it to use the loud built-in speaker instead.
+            if (headset != null) {
+                // A headset is connected! Explicitly set it as the communication device.
+                audioManager.setCommunicationDevice(headset)
+            } else {
+                // No headset connected. Force loud built-in speaker.
                 val speaker = devices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
                 if (speaker != null) {
                     audioManager.setCommunicationDevice(speaker)
                 }
-            } else {
-                // A headset is connected! Do absolutely nothing and let Android's native
-                // automatic routing handle it instantly.
-                audioManager.clearCommunicationDevice()
             }
         } else {
             @Suppress("DEPRECATION")
-            audioManager.isSpeakerphoneOn =
-                !audioManager.isWiredHeadsetOn && !audioManager.isBluetoothScoOn && !audioManager.isBluetoothA2dpOn
+            val isBluetoothOn = audioManager.isBluetoothScoOn || audioManager.isBluetoothA2dpOn
+            @Suppress("DEPRECATION")
+            val isWiredOn = audioManager.isWiredHeadsetOn
+
+            if (isBluetoothOn) {
+                @Suppress("DEPRECATION")
+                audioManager.startBluetoothSco()
+                @Suppress("DEPRECATION")
+                audioManager.isBluetoothScoOn = true
+                @Suppress("DEPRECATION")
+                audioManager.isSpeakerphoneOn = false
+            } else if (isWiredOn) {
+                @Suppress("DEPRECATION")
+                audioManager.isSpeakerphoneOn = false
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.isSpeakerphoneOn = true
+            }
         }
     }
 }
