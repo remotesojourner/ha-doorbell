@@ -159,7 +159,7 @@ fun SettingsScreen(
                         onValueChange = { url = it },
                         label = { Text("Home Assistant URL") },
                         leadingIcon = { Icon(Icons.Default.Dns, contentDescription = "Server URL") },
-                        placeholder = { Text("http://192.168.1.10:8123") },
+                        placeholder = { Text("https://192.168.1.10:8123") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true
