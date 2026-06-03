@@ -9,6 +9,8 @@
 [![License: GPL v3](https://img.shields.io/badge/license-GPL--v3-blue?style=flat&logo=gnu)](LICENSE.txt)
 [![AI-DECLARATION: auto](https://img.shields.io/badge/䷼%20AI--DECLARATION-auto-ede9fe?labelColor=ede9fe)](AI-DECLARATION.md)
 
+<a href="https://apps.obtainium.imranr.dev/redirect.html?r=obtainium://add/https://github.com/remotesojourner/ha-doorbell"><img src="https://github.com/ImranR98/Obtainium/blob/main/assets/graphics/badge_obtainium.png?raw=true" height="80" alt="Get it on Obtainium"></a>
+
 An Android doorbell application built for Home Assistant. Integrates with built-in `go2rtc` from the Frigate or AlexxIT/WebRTC integrations for 2-way audio and video streaming.
 
 ## Features

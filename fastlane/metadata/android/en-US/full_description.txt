@@ -1,0 +1,7 @@
+An Android doorbell application built for Home Assistant. It integrates directly with built-in go2rtc from the Frigate or AlexxIT/WebRTC integrations to provide real-time 2-way audio and video streaming.
+
+Features:
+• WebRTC Video & Audio: Low latency streaming using WebRTC.
+• 2-Way Audio Intercom: Supports talking back through your camera using Android's native acoustic echo cancellation.
+• Biometric Door Lock Integration: Unlock your front door right from the video stream using Android Fingerprint, Face Unlock, or PIN.
+• Quick Replies: Trigger pre-recorded Home Assistant select entity messages instantly.
