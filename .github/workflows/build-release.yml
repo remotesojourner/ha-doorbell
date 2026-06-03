@@ -4,8 +4,7 @@ on:
   push:
     branches: [ "main" ]
     paths-ignore:
-      - 'README.md'
-      - 'AI-DECLARATION.md'
+      - '*.md'
       - 'LICENSE.txt'
       - 'blueprints/**'
       - 'screnshots/**'
@@ -15,8 +14,7 @@ on:
   pull_request:
     branches: [ "main" ]
     paths-ignore:
-      - 'README.md'
-      - 'AI-DECLARATION.md'
+      - '*.md'
       - 'LICENSE.txt'
       - 'blueprints/**'
       - 'fastlane/**'

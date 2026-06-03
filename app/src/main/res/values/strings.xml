@@ -1,3 +1,26 @@
 <resources>
     <string name="app_name">HA Doorbell</string>
+    <string name="settings_title">Doorbell Setup</string>
+    <string name="settings_save">Save &amp; Connect</string>
+    <string name="settings_server_connection">Server Connection</string>
+    <string name="settings_ha_url">Home Assistant URL</string>
+    <string name="settings_ha_token">Long-Lived Access Token</string>
+    <string name="settings_stream_config">Stream Configuration</string>
+    <string name="settings_ha_integration">Home Assistant Integration</string>
+    <string name="settings_stream_source_desc">Go2rtc stream name that supports 2 way audio</string>
+    <string name="settings_stream_source">go2rtc Stream Name</string>
+    <string name="settings_integrations_optional">Integrations (Optional)</string>
+    <string name="settings_integrations_desc">If you have a select entity for quick replies or a lock entity to open your door, enter their IDs below.</string>
+    <string name="settings_instant_2way">Connect in 2-way mode instantly</string>
+    <string name="settings_quick_reply_id">Quick Reply Entity ID</string>
+    <string name="settings_door_lock_id">Door Lock Entity ID</string>
+    
+    <string name="stream_connection_failed">Connection Failed</string>
+    <string name="stream_connecting">Connecting to Doorbell...</string>
+    <string name="stream_cannot_operate_lock">Cannot operate lock in current state: %1$s</string>
+    <string name="stream_door_already_state">Door is already %1$s</string>
+    <string name="stream_unlock_door">Unlock Door</string>
+    <string name="stream_authenticate_unlock">Authenticate to unlock</string>
+    <string name="stream_auth_bypassed">Authentication bypassed or invalid!</string>
+    <string name="stream_quick_reply">Quick Reply</string>
 </resources>

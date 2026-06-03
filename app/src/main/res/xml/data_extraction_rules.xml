@@ -2,5 +2,6 @@
 <data-extraction-rules>
     <cloud-backup>
         <include domain="sharedpref" path="."/>
+        <exclude domain="file" path="datastore"/>
     </cloud-backup>
 </data-extraction-rules>
