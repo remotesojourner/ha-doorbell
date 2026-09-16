@@ -9,7 +9,7 @@ plugins {
 android {
     namespace = "com.novasoftware.hadoorbell"
     //noinspection GradleDependency,NewerVersionAvailable
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.novasoftware.hadoorbell"
@@ -81,57 +81,61 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.18.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
-    implementation("androidx.activity:activity-compose:1.13.0")
-    implementation(platform("androidx.compose:compose-bom:2026.05.01"))
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.navigation:navigation-compose:2.9.8")
-    implementation("androidx.appcompat:appcompat:1.7.1")
-    implementation("androidx.biometric:biometric:1.2.0-alpha05")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.activity.compose)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.biometric)
 
     // DataStore Preferences
-    implementation("androidx.datastore:datastore-preferences:1.2.1")
+    implementation(libs.androidx.datastore.preferences)
 
     // WebRTC
-    implementation("io.getstream:stream-webrtc-android:1.3.10") // 16KB-page compliant version
+    implementation(libs.stream.webrtc.android) // 16KB-page compliant version
 
     // OkHttp for WebSocket and REST
-    implementation("com.squareup.okhttp3:okhttp:5.3.2")
+    implementation(libs.okhttp)
     
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation(libs.kotlinx.coroutines.android)
 
     // Retrofit & Gson
-    implementation("com.squareup.retrofit2:retrofit:2.11.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
-    implementation("com.google.code.gson:gson:2.14.0")
+    implementation(libs.retrofit)
+    implementation(libs.converter.gson)
+    implementation(libs.gson)
 
     // Hilt Dependency Injection
-    implementation("com.google.dagger:hilt-android:2.59.2")
-    "ksp"("com.google.dagger:hilt-compiler:2.59.2")
-    implementation("androidx.hilt:hilt-navigation-compose:1.3.0")
+    implementation(libs.hilt.android)
+    implementation(libs.androidx.hilt.navigation.compose)
+    listOf("ksp", "kspTest").forEach {
+        add(it, libs.hilt.compiler)
+    }
 
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
-    testImplementation("io.mockk:mockk:1.14.11")
-    testImplementation("com.squareup.okhttp3:mockwebserver:5.3.2")
-    testImplementation("org.robolectric:robolectric:4.16.1")
-    testImplementation(platform("androidx.compose:compose-bom:2026.05.01"))
-    testImplementation("androidx.compose.ui:ui-test-junit4")
-    testImplementation("com.google.dagger:hilt-android-testing:2.59.2")
-    "kspTest"("com.google.dagger:hilt-compiler:2.59.2")
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.mockk)
+    testImplementation(libs.mockwebserver)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.hilt.android.testing)
 
-    androidTestImplementation("androidx.test.ext:junit:1.3.0")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2026.05.01"))
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    
+    // Shared testing dependencies
+    listOf("testImplementation", "androidTestImplementation").forEach {
+        add(it, platform(libs.androidx.compose.bom))
+        add(it, libs.androidx.compose.ui.test.junit4)
+    }
+
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
