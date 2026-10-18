@@ -146,6 +146,8 @@ dependencies {
         add(it, libs.androidx.compose.ui.test.junit4)
     }
 
+    add("androidLintTool", platform(libs.bouncycastle.bom))
+
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
