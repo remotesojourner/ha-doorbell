@@ -7,5 +7,11 @@ data class Settings(
     val quickReplyEntityId: String = "",
     val lockEntityId: String = "",
     val instantTwoWayAudio: Boolean = false,
-    val webrtcProvider: String = "frigate"
+    val webrtcProvider: String = "frigate",
+    val doorEntityId: String = "",
+    val doorService: String = "",
+    val answerActionService: String = "",
+    val answerActionEntityId: String = "",
+    val hangupActionService: String = "",
+    val hangupActionEntityId: String = ""
 )

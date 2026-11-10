@@ -10,6 +10,12 @@ interface SettingsRepository {
     val lockEntityIdFlow: Flow<String?>
     val instantTwoWayAudioFlow: Flow<Boolean>
     val webrtcProviderFlow: Flow<String>
+    val doorEntityIdFlow: Flow<String?>
+    val doorServiceFlow: Flow<String?>
+    val answerActionServiceFlow: Flow<String?>
+    val answerActionEntityIdFlow: Flow<String?>
+    val hangupActionServiceFlow: Flow<String?>
+    val hangupActionEntityIdFlow: Flow<String?>
 
     suspend fun saveSettings(
         url: String, 
@@ -18,6 +24,12 @@ interface SettingsRepository {
         quickReplyEntityId: String, 
         lockEntityId: String, 
         instantTwoWayAudio: Boolean = false, 
-        provider: String = "frigate"
+        provider: String = "frigate",
+        doorEntityId: String = "",
+        doorService: String = "",
+        answerActionService: String = "",
+        answerActionEntityId: String = "",
+        hangupActionService: String = "",
+        hangupActionEntityId: String = ""
     )
 }

@@ -39,6 +39,12 @@ class SettingsViewModel @Inject constructor(
                     lockEntityId = settings.lockEntityId,
                     instantTwoWayAudio = settings.instantTwoWayAudio,
                     webrtcProvider = settings.webrtcProvider,
+                    doorEntityId = settings.doorEntityId,
+                    doorService = settings.doorService,
+                    answerActionService = settings.answerActionService,
+                    answerActionEntityId = settings.answerActionEntityId,
+                    hangupActionService = settings.hangupActionService,
+                    hangupActionEntityId = settings.hangupActionEntityId,
                     isLoaded = true
                 )
             }
@@ -59,6 +65,12 @@ class SettingsViewModel @Inject constructor(
     fun updateLockEntityId(value: String) { _uiState.update { it.copy(lockEntityId = value) } }
     fun updateInstantTwoWayAudio(value: Boolean) { _uiState.update { it.copy(instantTwoWayAudio = value) } }
     fun updateWebrtcProvider(value: String) { _uiState.update { it.copy(webrtcProvider = value) } }
+    fun updateDoorEntityId(value: String) { _uiState.update { it.copy(doorEntityId = value) } }
+    fun updateDoorService(value: String) { _uiState.update { it.copy(doorService = value) } }
+    fun updateAnswerActionService(value: String) { _uiState.update { it.copy(answerActionService = value) } }
+    fun updateAnswerActionEntityId(value: String) { _uiState.update { it.copy(answerActionEntityId = value) } }
+    fun updateHangupActionService(value: String) { _uiState.update { it.copy(hangupActionService = value) } }
+    fun updateHangupActionEntityId(value: String) { _uiState.update { it.copy(hangupActionEntityId = value) } }
 
     fun saveSettings(onComplete: () -> Unit) {
         viewModelScope.launch {
@@ -70,7 +82,13 @@ class SettingsViewModel @Inject constructor(
                 quickReplyEntityId = currentState.quickReplyEntityId,
                 lockEntityId = currentState.lockEntityId,
                 instantTwoWayAudio = currentState.instantTwoWayAudio,
-                webrtcProvider = currentState.webrtcProvider
+                webrtcProvider = currentState.webrtcProvider,
+                doorEntityId = currentState.doorEntityId,
+                doorService = currentState.doorService,
+                answerActionService = currentState.answerActionService,
+                answerActionEntityId = currentState.answerActionEntityId,
+                hangupActionService = currentState.hangupActionService,
+                hangupActionEntityId = currentState.hangupActionEntityId
             )
             saveSettingsUseCase(settings)
             onComplete()

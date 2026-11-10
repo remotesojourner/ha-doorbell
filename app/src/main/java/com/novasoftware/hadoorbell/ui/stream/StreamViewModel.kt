@@ -6,16 +6,18 @@ import androidx.lifecycle.viewModelScope
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.data.repository.SettingsRepositoryImpl
 import com.novasoftware.hadoorbell.domain.repository.HomeAssistantRepository
+import com.novasoftware.hadoorbell.domain.usecase.CallActionUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSelectOptionsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.LockDoorUseCase
 import com.novasoftware.hadoorbell.domain.model.LockState
+import com.novasoftware.hadoorbell.domain.usecase.OpenDoorUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SendQuickReplyUseCase
 import com.novasoftware.hadoorbell.domain.usecase.UnlockDoorUseCase
 import com.novasoftware.hadoorbell.core.webrtc.WebRtcClientFactory
-import com.novasoftware.hadoorbell.core.webrtc.WebRtcManager
 import com.novasoftware.hadoorbell.core.webrtc.WebRtcManagerFactory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,12 +28,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.webrtc.VideoSink
 import javax.inject.Inject
 
 sealed class UiEvent {
     data class ShowToast(val message: String, val long: Boolean = false) : UiEvent()
-    object RequestBiometricAuth : UiEvent()
+    data class RequestBiometricAuth(val forDoor: Boolean = false) : UiEvent()
 }
 
 @HiltViewModel
@@ -44,7 +47,9 @@ class StreamViewModel @Inject constructor(
     private val lockDoorUseCase: LockDoorUseCase,
     private val unlockDoorUseCase: UnlockDoorUseCase,
     private val getSelectOptionsUseCase: GetSelectOptionsUseCase,
-    private val sendQuickReplyUseCase: SendQuickReplyUseCase
+    private val sendQuickReplyUseCase: SendQuickReplyUseCase,
+    private val openDoorUseCase: OpenDoorUseCase,
+    private val callActionUseCase: CallActionUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StreamUiState())
@@ -53,12 +58,31 @@ class StreamViewModel @Inject constructor(
     private val _uiEvent = MutableSharedFlow<UiEvent>()
     val uiEvent: SharedFlow<UiEvent> = _uiEvent.asSharedFlow()
 
+    private var lastVideoSink: VideoSink? = null
+
     fun initializeConnection(context: Context) {
         viewModelScope.launch {
             val qrId = appPreferences.quickReplyEntityIdFlow.first() ?: ""
             val lId = appPreferences.lockEntityIdFlow.first() ?: ""
-            
-            _uiState.update { it.copy(quickReplyEntityId = qrId, lockEntityId = lId) }
+            val dId = appPreferences.doorEntityIdFlow.first() ?: ""
+            val dService = appPreferences.doorServiceFlow.first() ?: ""
+            val answerService = appPreferences.answerActionServiceFlow.first() ?: ""
+            val answerEntity = appPreferences.answerActionEntityIdFlow.first() ?: ""
+            val hangupService = appPreferences.hangupActionServiceFlow.first() ?: ""
+            val hangupEntity = appPreferences.hangupActionEntityIdFlow.first() ?: ""
+
+            _uiState.update {
+                it.copy(
+                    quickReplyEntityId = qrId,
+                    lockEntityId = lId,
+                    doorEntityId = dId,
+                    doorService = dService,
+                    answerActionService = answerService,
+                    answerActionEntityId = answerEntity,
+                    hangupActionService = hangupService,
+                    hangupActionEntityId = hangupEntity
+                )
+            }
 
             val instantTwoWay = appPreferences.instantTwoWayAudioFlow.first()
             _uiState.update { it.copy(isMicEnabled = instantTwoWay && qrId.isBlank()) }
@@ -75,6 +99,7 @@ class StreamViewModel @Inject constructor(
     }
 
     fun startStream(videoSink: VideoSink) {
+        lastVideoSink = videoSink
         val currentState = _uiState.value
         currentState.webRtcManager?.startConnection(videoSink, currentState.isMicEnabled) { error ->
             _uiState.update { it.copy(errorMessage = error) }
@@ -83,6 +108,7 @@ class StreamViewModel @Inject constructor(
 
     fun teardownConnection() {
         _uiState.value.webRtcManager?.disconnect()
+        lastVideoSink = null
         _uiState.update { 
             it.copy(
                 webRtcManager = null,
@@ -95,17 +121,92 @@ class StreamViewModel @Inject constructor(
     fun toggleMic(context: Context) {
         val currentState = _uiState.value
         if (currentState.webRtcManager == null || currentState.isSwitchingModes) return
-        
-        _uiState.update { it.copy(isSwitchingModes = true, isMicEnabled = !it.isMicEnabled) }
+
+        if (currentState.isMicEnabled) {
+            hangUpCall(context)
+        } else {
+            answerCall(context)
+        }
+    }
+
+    fun answerCall(context: Context) {
+        val currentState = _uiState.value
+        if (currentState.webRtcManager == null || currentState.isSwitchingModes || currentState.isMicEnabled) return
+
+        _uiState.update { it.copy(isSwitchingModes = true, isMicEnabled = true) }
 
         viewModelScope.launch {
-            _uiState.value.webRtcManager?.disconnect()?.join()
-            _uiState.update { it.copy(webRtcManager = null) }
-            delay(100)
+            try {
+                restartConnection(context)
+                runCallAction(
+                    service = _uiState.value.answerActionService,
+                    entityId = _uiState.value.answerActionEntityId,
+                    label = "Answer"
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiEvent.emit(UiEvent.ShowToast("Call setup failed: ${e.message}", long = true))
+            } finally {
+                _uiState.update { it.copy(isSwitchingModes = false) }
+            }
+        }
+    }
 
-            val signalingClient = webRtcClientFactory.createClient()
-            val manager = WebRtcManager(context, signalingClient, viewModelScope)
-            _uiState.update { it.copy(webRtcManager = manager, isSwitchingModes = false) }
+    fun hangUpCall(context: Context) {
+        val currentState = _uiState.value
+        if (currentState.webRtcManager == null || currentState.isSwitchingModes || !currentState.isMicEnabled) return
+
+        _uiState.update { it.copy(isSwitchingModes = true, isMicEnabled = false) }
+
+        viewModelScope.launch {
+            try {
+                runCallAction(
+                    service = _uiState.value.hangupActionService,
+                    entityId = _uiState.value.hangupActionEntityId,
+                    label = "Hang up"
+                )
+                restartConnection(context)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiEvent.emit(UiEvent.ShowToast("Hang up failed: ${e.message}", long = true))
+            } finally {
+                _uiState.update { it.copy(isSwitchingModes = false) }
+            }
+        }
+    }
+
+    private suspend fun runCallAction(service: String, entityId: String, label: String) {
+        if (service.isBlank()) return
+
+        val result = withTimeoutOrNull(CALL_ACTION_TIMEOUT_MS) {
+            callActionUseCase(service, entityId)
+        }
+
+        if (result == null) {
+            _uiEvent.emit(UiEvent.ShowToast("$label action timed out", long = true))
+            return
+        }
+
+        result.onFailure { error ->
+            _uiEvent.emit(UiEvent.ShowToast("$label action failed: ${error.message}", long = true))
+        }
+    }
+
+    private suspend fun restartConnection(context: Context) {
+        _uiState.value.webRtcManager?.disconnect()?.join()
+        _uiState.update { it.copy(webRtcManager = null, errorMessage = null) }
+        delay(100)
+
+        val signalingClient = webRtcClientFactory.createClient()
+        val manager = webRtcManagerFactory.create(context, signalingClient, viewModelScope)
+        _uiState.update { it.copy(webRtcManager = manager) }
+
+        lastVideoSink?.let { sink ->
+            manager.startConnection(sink, _uiState.value.isMicEnabled) { error ->
+                _uiState.update { it.copy(errorMessage = error) }
+            }
         }
     }
 
@@ -165,7 +266,26 @@ class StreamViewModel @Inject constructor(
             executeLockDoor()
         } else {
             viewModelScope.launch {
-                _uiEvent.emit(UiEvent.RequestBiometricAuth)
+                _uiEvent.emit(UiEvent.RequestBiometricAuth())
+            }
+        }
+    }
+
+    fun handleDoorAction() {
+        if (_uiState.value.doorEntityId.isBlank()) return
+
+        viewModelScope.launch {
+            _uiEvent.emit(UiEvent.RequestBiometricAuth(forDoor = true))
+        }
+    }
+
+    fun executeOpenDoor() {
+        viewModelScope.launch {
+            openDoorUseCase(
+                entityId = _uiState.value.doorEntityId,
+                service = _uiState.value.doorService
+            ).onFailure { error ->
+                _uiEvent.emit(UiEvent.ShowToast("Open door failed: ${error.message}", long = true))
             }
         }
     }
@@ -208,6 +328,6 @@ class StreamViewModel @Inject constructor(
     }
 
     companion object {
-        // Reserved for future constants if needed
+        private const val CALL_ACTION_TIMEOUT_MS = 10_000L
     }
 }

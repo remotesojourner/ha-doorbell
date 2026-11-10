@@ -15,7 +15,13 @@ class SaveSettingsUseCase @Inject constructor(
             quickReplyEntityId = settings.quickReplyEntityId,
             lockEntityId = settings.lockEntityId,
             instantTwoWayAudio = settings.instantTwoWayAudio,
-            provider = settings.webrtcProvider
+            provider = settings.webrtcProvider,
+            doorEntityId = settings.doorEntityId,
+            doorService = settings.doorService,
+            answerActionService = settings.answerActionService,
+            answerActionEntityId = settings.answerActionEntityId,
+            hangupActionService = settings.hangupActionService,
+            hangupActionEntityId = settings.hangupActionEntityId
         )
     }
 }

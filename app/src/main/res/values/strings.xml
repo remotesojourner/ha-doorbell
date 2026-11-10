@@ -14,6 +14,17 @@
     <string name="settings_instant_2way">Connect in 2-way mode instantly</string>
     <string name="settings_quick_reply_id">Quick Reply Entity ID</string>
     <string name="settings_door_lock_id">Door Lock Entity ID</string>
+    <string name="settings_door_open">Door Open Action</string>
+    <string name="settings_door_open_desc">Entity and service used by the door button. The lock entity above keeps the existing biometric lock behavior. Leave the entity empty to keep the lock button.</string>
+    <string name="settings_door_entity">Door Open Entity ID</string>
+    <string name="settings_door_service">Door Open Service (optional)</string>
+    <string name="settings_door_service_desc">Defaults to the entity domain, for example lock.unlock or switch.turn_on. Use switch.turn_on for momentary relays.</string>
+    <string name="settings_call_actions">Call Actions (Optional)</string>
+    <string name="settings_call_actions_desc">Home Assistant services to run when answering or ending a call, in domain.service format. Leave empty to keep the current local-only microphone behavior.</string>
+    <string name="settings_answer_action">Answer Service</string>
+    <string name="settings_answer_entity">Answer Target Entity (optional)</string>
+    <string name="settings_hangup_action">Hang Up Service</string>
+    <string name="settings_hangup_entity">Hang Up Target Entity (optional)</string>
     
     <string name="stream_connection_failed">Connection Failed</string>
     <string name="stream_connecting">Connecting to Doorbell...</string>
@@ -23,4 +34,5 @@
     <string name="stream_authenticate_unlock">Authenticate to unlock</string>
     <string name="stream_auth_bypassed">Authentication bypassed or invalid!</string>
     <string name="stream_quick_reply">Quick Reply</string>
+    <string name="stream_open_door">Open Door</string>
 </resources>

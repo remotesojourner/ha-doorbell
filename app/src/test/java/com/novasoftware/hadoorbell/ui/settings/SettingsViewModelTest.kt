@@ -36,7 +36,13 @@ class SettingsViewModelTest {
             quickReplyEntityId = "input_select.qr",
             lockEntityId = "lock.front",
             instantTwoWayAudio = false,
-            webrtcProvider = "webrtc"
+            webrtcProvider = "webrtc",
+            doorEntityId = "switch.door_relay",
+            doorService = "switch.turn_on",
+            answerActionService = "switch.turn_on",
+            answerActionEntityId = "switch.doorbell_talk",
+            hangupActionService = "switch.turn_off",
+            hangupActionEntityId = "switch.doorbell_talk"
         )
         getSettingsUseCase = mockk {
             every { this@mockk.invoke() } returns flowOf(initialSettings)
@@ -56,6 +62,12 @@ class SettingsViewModelTest {
         assertEquals("lock.front", viewModel.uiState.value.lockEntityId)
         assertFalse(viewModel.uiState.value.instantTwoWayAudio)
         assertEquals("webrtc", viewModel.uiState.value.webrtcProvider)
+        assertEquals("switch.door_relay", viewModel.uiState.value.doorEntityId)
+        assertEquals("switch.turn_on", viewModel.uiState.value.doorService)
+        assertEquals("switch.turn_on", viewModel.uiState.value.answerActionService)
+        assertEquals("switch.doorbell_talk", viewModel.uiState.value.answerActionEntityId)
+        assertEquals("switch.turn_off", viewModel.uiState.value.hangupActionService)
+        assertEquals("switch.doorbell_talk", viewModel.uiState.value.hangupActionEntityId)
     }
 
     @Test
@@ -93,7 +105,13 @@ class SettingsViewModelTest {
                     quickReplyEntityId = "input_select.qr",
                     lockEntityId = "lock.front",
                     instantTwoWayAudio = false,
-                    webrtcProvider = "webrtc"
+                    webrtcProvider = "webrtc",
+                    doorEntityId = "switch.door_relay",
+                    doorService = "switch.turn_on",
+                    answerActionService = "switch.turn_on",
+                    answerActionEntityId = "switch.doorbell_talk",
+                    hangupActionService = "switch.turn_off",
+                    hangupActionEntityId = "switch.doorbell_talk"
                 )
             )
         }

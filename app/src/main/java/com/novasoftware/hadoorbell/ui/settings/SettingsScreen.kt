@@ -260,6 +260,98 @@ fun SettingsScreen(
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true
                     )
+
+                    Text(
+                        stringResource(R.string.settings_door_open),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Text(
+                        stringResource(R.string.settings_door_open_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.doorEntityId,
+                        onValueChange = { viewModel.updateDoorEntityId(it) },
+                        label = { Text(stringResource(R.string.settings_door_entity)) },
+                        placeholder = { Text("switch.door_relay") },
+                        modifier = Modifier.fillMaxWidth().testTag("door_entity_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.doorService,
+                        onValueChange = { viewModel.updateDoorService(it) },
+                        label = { Text(stringResource(R.string.settings_door_service)) },
+                        placeholder = { Text("switch.turn_on") },
+                        modifier = Modifier.fillMaxWidth().testTag("door_service_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    Text(
+                        stringResource(R.string.settings_door_service_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Text(
+                        stringResource(R.string.settings_call_actions),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Text(
+                        stringResource(R.string.settings_call_actions_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.answerActionService,
+                        onValueChange = { viewModel.updateAnswerActionService(it) },
+                        label = { Text(stringResource(R.string.settings_answer_action)) },
+                        placeholder = { Text("switch.turn_on") },
+                        modifier = Modifier.fillMaxWidth().testTag("answer_action_service_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.answerActionEntityId,
+                        onValueChange = { viewModel.updateAnswerActionEntityId(it) },
+                        label = { Text(stringResource(R.string.settings_answer_entity)) },
+                        placeholder = { Text("switch.doorbell_talk") },
+                        modifier = Modifier.fillMaxWidth().testTag("answer_action_entity_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.hangupActionService,
+                        onValueChange = { viewModel.updateHangupActionService(it) },
+                        label = { Text(stringResource(R.string.settings_hangup_action)) },
+                        placeholder = { Text("switch.turn_off") },
+                        modifier = Modifier.fillMaxWidth().testTag("hangup_action_service_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.hangupActionEntityId,
+                        onValueChange = { viewModel.updateHangupActionEntityId(it) },
+                        label = { Text(stringResource(R.string.settings_hangup_entity)) },
+                        placeholder = { Text("switch.doorbell_talk") },
+                        modifier = Modifier.fillMaxWidth().testTag("hangup_action_entity_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
                 }
             }
             

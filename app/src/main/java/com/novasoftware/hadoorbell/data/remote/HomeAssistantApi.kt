@@ -16,7 +16,7 @@ data class EntityStateResponse(
 
 data class CallServiceRequest(
     @SerializedName("entity_id")
-    val entityId: String
+    val entityId: String?
 )
 
 data class SetSelectOptionRequest(
