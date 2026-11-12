@@ -25,7 +25,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -53,6 +55,7 @@ class StreamViewModelTest {
     private lateinit var openDoorUseCase: OpenDoorUseCase
     private lateinit var callActionUseCase: CallActionUseCase
     private lateinit var webRtcManager: WebRtcManager
+    private lateinit var videoSink: VideoSink
     private lateinit var viewModel: StreamViewModel
 
     @Before
@@ -87,6 +90,7 @@ class StreamViewModelTest {
         webRtcManager = mockk(relaxed = true) {
             every { disconnect() } returns mockk<Job>(relaxed = true)
         }
+        videoSink = mockk(relaxed = true)
 
         webRtcManagerFactory = mockk(relaxed = true) {
             every { create(any(), any(), any()) } returns webRtcManager
@@ -163,9 +167,12 @@ class StreamViewModelTest {
     fun `answering without a configured action keeps the local only microphone behavior`() = runTest {
         viewModel.initializeConnection(context)
         advanceUntilIdle()
-        viewModel.startStream(mockk<VideoSink>(relaxed = true))
+        viewModel.startStream(videoSink)
 
         viewModel.toggleMic(context)
+        advanceTimeBy(200)
+        runCurrent()
+        viewModel.startStream(videoSink)
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.isMicEnabled)
@@ -174,21 +181,120 @@ class StreamViewModelTest {
     }
 
     @Test
-    fun `answer action runs after the WebRTC connection is started with the microphone`() = runTest {
+    fun `webRTC starts once per mode switch and only when the renderer attaches`() = runTest {
+        val firstManager = mockk<WebRtcManager>(relaxed = true) {
+            every { disconnect() } returns mockk<Job>(relaxed = true)
+        }
+        val secondManager = mockk<WebRtcManager>(relaxed = true) {
+            every { disconnect() } returns mockk<Job>(relaxed = true)
+        }
+        every { webRtcManagerFactory.create(any(), any(), any()) } returnsMany
+            listOf(firstManager, secondManager)
+
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+        viewModel.startStream(videoSink)
+        verify(exactly = 1) { firstManager.startConnection(any(), false, any()) }
+
+        viewModel.answerCall(context)
+        advanceTimeBy(200)
+        runCurrent()
+
+        verify(exactly = 0) { secondManager.startConnection(any(), any(), any()) }
+
+        viewModel.startStream(videoSink)
+        advanceUntilIdle()
+
+        verify(exactly = 1) { secondManager.startConnection(any(), true, any()) }
+    }
+
+    @Test
+    fun `answer action runs only after the WebRTC connection is ready`() = runTest {
         every { appPreferences.answerActionServiceFlow } returns flowOf("switch.turn_on")
         every { appPreferences.answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
 
         viewModel.initializeConnection(context)
         advanceUntilIdle()
-        viewModel.startStream(mockk<VideoSink>(relaxed = true))
+        viewModel.startStream(videoSink)
 
         viewModel.answerCall(context)
+        advanceTimeBy(200)
+        runCurrent()
+
+        coVerify(exactly = 0) { repository.callService(any(), any(), any()) }
+
+        viewModel.startStream(videoSink)
         advanceUntilIdle()
 
         coVerifyOrder {
             webRtcManager.startConnection(any(), true, any())
             repository.callService("switch", "turn_on", "switch.doorbell_talk")
         }
+    }
+
+    @Test
+    fun `answer action is not sent when the screen is left during the restart`() = runTest {
+        every { appPreferences.answerActionServiceFlow } returns flowOf("switch.turn_on")
+        every { appPreferences.answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+        viewModel.startStream(videoSink)
+
+        viewModel.answerCall(context)
+        advanceTimeBy(200)
+        runCurrent()
+
+        viewModel.teardownConnection()
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { repository.callService(any(), any(), any()) }
+    }
+
+    @Test
+    fun `hang up action is sent when leaving an active call`() = runTest {
+        every { appPreferences.answerActionServiceFlow } returns flowOf("switch.turn_on")
+        every { appPreferences.answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+        every { appPreferences.hangupActionServiceFlow } returns flowOf("switch.turn_off")
+        every { appPreferences.hangupActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+        viewModel.startStream(videoSink)
+
+        viewModel.answerCall(context)
+        advanceTimeBy(200)
+        runCurrent()
+        viewModel.startStream(videoSink)
+        advanceUntilIdle()
+
+        viewModel.teardownConnection()
+        advanceUntilIdle()
+
+        coVerify { repository.callService("switch", "turn_off", "switch.doorbell_talk") }
+    }
+
+    @Test
+    fun `ending the call mutes the microphone immediately`() = runTest {
+        every { appPreferences.answerActionServiceFlow } returns flowOf("switch.turn_on")
+        every { appPreferences.answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+        every { appPreferences.hangupActionServiceFlow } returns flowOf("switch.turn_off")
+        every { appPreferences.hangupActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+        viewModel.startStream(videoSink)
+        viewModel.answerCall(context)
+        advanceTimeBy(200)
+        runCurrent()
+        viewModel.startStream(videoSink)
+        advanceUntilIdle()
+
+        viewModel.hangUpCall(context)
+
+        verify(exactly = 1) { webRtcManager.setMicrophoneEnabled(false) }
+        coVerify { repository.callService("switch", "turn_off", "switch.doorbell_talk") }
+        assertFalse(viewModel.uiState.value.isMicEnabled)
     }
 
     @Test
@@ -200,14 +306,18 @@ class StreamViewModelTest {
 
         viewModel.initializeConnection(context)
         advanceUntilIdle()
-        viewModel.startStream(mockk<VideoSink>(relaxed = true))
+        viewModel.startStream(videoSink)
         viewModel.answerCall(context)
+        advanceTimeBy(200)
+        runCurrent()
+        viewModel.startStream(videoSink)
         advanceUntilIdle()
 
         viewModel.hangUpCall(context)
         advanceUntilIdle()
 
         coVerifyOrder {
+            webRtcManager.setMicrophoneEnabled(false)
             repository.callService("switch", "turn_off", "switch.doorbell_talk")
             webRtcManager.disconnect()
         }
@@ -228,8 +338,11 @@ class StreamViewModelTest {
 
         viewModel.initializeConnection(context)
         advanceUntilIdle()
-        viewModel.startStream(mockk<VideoSink>(relaxed = true))
+        viewModel.startStream(videoSink)
         viewModel.answerCall(context)
+        advanceTimeBy(200)
+        runCurrent()
+        viewModel.startStream(videoSink)
         advanceUntilIdle()
         collector.cancel()
 

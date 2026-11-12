@@ -18,6 +18,8 @@ import com.novasoftware.hadoorbell.core.webrtc.WebRtcManagerFactory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,9 +27,11 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.webrtc.VideoSink
 import javax.inject.Inject
@@ -58,9 +62,13 @@ class StreamViewModel @Inject constructor(
     private val _uiEvent = MutableSharedFlow<UiEvent>()
     val uiEvent: SharedFlow<UiEvent> = _uiEvent.asSharedFlow()
 
-    private var lastVideoSink: VideoSink? = null
+    private val activeConnection = MutableStateFlow<Job?>(null)
+    private var isScreenActive = false
+    private var callAnswered = false
+    private var answerJob: Job? = null
 
     fun initializeConnection(context: Context) {
+        isScreenActive = true
         viewModelScope.launch {
             val qrId = appPreferences.quickReplyEntityIdFlow.first() ?: ""
             val lId = appPreferences.lockEntityIdFlow.first() ?: ""
@@ -85,7 +93,11 @@ class StreamViewModel @Inject constructor(
             }
 
             val instantTwoWay = appPreferences.instantTwoWayAudioFlow.first()
-            _uiState.update { it.copy(isMicEnabled = instantTwoWay && qrId.isBlank()) }
+            val micEnabled = instantTwoWay && qrId.isBlank()
+            _uiState.update { it.copy(isMicEnabled = micEnabled) }
+            if (micEnabled) {
+                callAnswered = true
+            }
 
             if (lId.isNotBlank()) {
                 val stateResult = repository.getEntityState(lId)
@@ -99,22 +111,34 @@ class StreamViewModel @Inject constructor(
     }
 
     fun startStream(videoSink: VideoSink) {
-        lastVideoSink = videoSink
         val currentState = _uiState.value
-        currentState.webRtcManager?.startConnection(videoSink, currentState.isMicEnabled) { error ->
+        val manager = currentState.webRtcManager ?: return
+        val connection = manager.startConnection(videoSink, currentState.isMicEnabled) { error ->
             _uiState.update { it.copy(errorMessage = error) }
         }
+        activeConnection.value = connection
     }
 
     fun teardownConnection() {
+        isScreenActive = false
+        answerJob?.cancel()
+        answerJob = null
+        val shouldHangUp = callAnswered
+        callAnswered = false
+
         _uiState.value.webRtcManager?.disconnect()
-        lastVideoSink = null
-        _uiState.update { 
+        activeConnection.value = null
+        _uiState.update {
             it.copy(
                 webRtcManager = null,
                 isMicEnabled = false,
-                isStreamMuted = false
-            ) 
+                isStreamMuted = false,
+                isSwitchingModes = false
+            )
+        }
+
+        if (shouldHangUp) {
+            sendHangUpAction()
         }
     }
 
@@ -135,9 +159,19 @@ class StreamViewModel @Inject constructor(
 
         _uiState.update { it.copy(isSwitchingModes = true, isMicEnabled = true) }
 
-        viewModelScope.launch {
+        answerJob = viewModelScope.launch {
             try {
                 restartConnection(context)
+
+                if (!awaitConnectionReady()) {
+                    _uiState.update { it.copy(isMicEnabled = false) }
+                    _uiEvent.emit(UiEvent.ShowToast("Call setup failed: no connection", long = true))
+                    return@launch
+                }
+
+                if (!isScreenActive) return@launch
+
+                callAnswered = true
                 runCallAction(
                     service = _uiState.value.answerActionService,
                     entityId = _uiState.value.answerActionEntityId,
@@ -146,6 +180,7 @@ class StreamViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                _uiState.update { it.copy(isMicEnabled = false) }
                 _uiEvent.emit(UiEvent.ShowToast("Call setup failed: ${e.message}", long = true))
             } finally {
                 _uiState.update { it.copy(isSwitchingModes = false) }
@@ -157,22 +192,42 @@ class StreamViewModel @Inject constructor(
         val currentState = _uiState.value
         if (currentState.webRtcManager == null || currentState.isSwitchingModes || !currentState.isMicEnabled) return
 
+        // Stop transmitting audio before the Home Assistant call, which can take seconds.
+        currentState.webRtcManager.setMicrophoneEnabled(false)
+        callAnswered = false
         _uiState.update { it.copy(isSwitchingModes = true, isMicEnabled = false) }
 
         viewModelScope.launch {
             try {
-                runCallAction(
-                    service = _uiState.value.hangupActionService,
-                    entityId = _uiState.value.hangupActionEntityId,
-                    label = "Hang up"
-                )
-                restartConnection(context)
+                withContext(NonCancellable) {
+                    runCallAction(
+                        service = _uiState.value.hangupActionService,
+                        entityId = _uiState.value.hangupActionEntityId,
+                        label = "Hang up"
+                    )
+                }
+                if (isScreenActive) {
+                    restartConnection(context)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 _uiEvent.emit(UiEvent.ShowToast("Hang up failed: ${e.message}", long = true))
             } finally {
                 _uiState.update { it.copy(isSwitchingModes = false) }
+            }
+        }
+    }
+
+    private fun sendHangUpAction() {
+        val state = _uiState.value
+        viewModelScope.launch {
+            withContext(NonCancellable) {
+                runCallAction(
+                    service = state.hangupActionService,
+                    entityId = state.hangupActionEntityId,
+                    label = "Hang up"
+                )
             }
         }
     }
@@ -196,18 +251,22 @@ class StreamViewModel @Inject constructor(
 
     private suspend fun restartConnection(context: Context) {
         _uiState.value.webRtcManager?.disconnect()?.join()
+        activeConnection.value = null
         _uiState.update { it.copy(webRtcManager = null, errorMessage = null) }
         delay(100)
 
         val signalingClient = webRtcClientFactory.createClient()
         val manager = webRtcManagerFactory.create(context, signalingClient, viewModelScope)
         _uiState.update { it.copy(webRtcManager = manager) }
+    }
 
-        lastVideoSink?.let { sink ->
-            manager.startConnection(sink, _uiState.value.isMicEnabled) { error ->
-                _uiState.update { it.copy(errorMessage = error) }
-            }
-        }
+    private suspend fun awaitConnectionReady(): Boolean {
+        val connection = withTimeoutOrNull(CONNECTION_TIMEOUT_MS) {
+            activeConnection.filterNotNull().first()
+        } ?: return false
+
+        val completed = withTimeoutOrNull(CONNECTION_TIMEOUT_MS) { connection.join() }
+        return completed != null && _uiState.value.errorMessage == null
     }
 
     fun toggleStreamMute() {
@@ -324,10 +383,12 @@ class StreamViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        answerJob?.cancel()
         _uiState.value.webRtcManager?.disconnect()
     }
 
     companion object {
         private const val CALL_ACTION_TIMEOUT_MS = 10_000L
+        private const val CONNECTION_TIMEOUT_MS = 15_000L
     }
 }

@@ -67,12 +67,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novasoftware.hadoorbell.R
+import com.novasoftware.hadoorbell.core.utils.BiometricPromptHelper
 import com.novasoftware.hadoorbell.domain.model.LockState
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
@@ -106,53 +106,21 @@ fun StreamScreen(
                     ).show()
                 }
                 is UiEvent.RequestBiometricAuth -> {
-                    val fragmentActivity = context as? FragmentActivity
-                    if (fragmentActivity != null) {
-                        val executor = androidx.core.content.ContextCompat.getMainExecutor(fragmentActivity)
-                        val cryptoObject = com.novasoftware.hadoorbell.core.utils.BiometricHelper.getCryptoObject()
-
-                        val promptInfoBuilder = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
-                            .setTitle(streamUnlockDoorText)
-                            .setSubtitle(streamAuthenticateUnlockText)
-
-                        if (cryptoObject != null) {
-                            promptInfoBuilder.setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG)
-                        } else {
-                            promptInfoBuilder.setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK or androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
-                        }
-                        val promptInfo = promptInfoBuilder.build()
-
-                        val onAuthenticated = {
+                    BiometricPromptHelper.authenticate(
+                        context = context,
+                        title = streamUnlockDoorText,
+                        subtitle = streamAuthenticateUnlockText,
+                        onSuccess = {
                             if (event.forDoor) {
                                 viewModel.executeOpenDoor()
                             } else {
                                 viewModel.executeUnlockDoor()
                             }
+                        },
+                        onCryptoFailure = {
+                            Toast.makeText(context, streamAuthBypassedText, Toast.LENGTH_LONG).show()
                         }
-
-                        val biometricPrompt = androidx.biometric.BiometricPrompt(fragmentActivity, executor,
-                            object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
-                                override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
-                                    super.onAuthenticationSucceeded(result)
-                                    if (cryptoObject != null) {
-                                        try {
-                                            result.cryptoObject?.cipher?.doFinal("unlock".toByteArray())
-                                            onAuthenticated()
-                                        } catch (_: Exception) {
-                                            Toast.makeText(context, streamAuthBypassedText, Toast.LENGTH_LONG).show()
-                                        }
-                                    } else {
-                                        onAuthenticated()
-                                    }
-                                }
-                            })
-
-                        if (cryptoObject != null) {
-                            biometricPrompt.authenticate(promptInfo, cryptoObject)
-                        } else {
-                            biometricPrompt.authenticate(promptInfo)
-                        }
-                    }
+                    )
                 }
             }
         }
