@@ -1,5 +1,6 @@
 package com.novasoftware.hadoorbell.ui.settings
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,12 +33,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.novasoftware.hadoorbell.R
+import com.novasoftware.hadoorbell.core.utils.BiometricPromptHelper
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,6 +53,30 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     if (!uiState.isLoaded) return
+
+    val context = LocalContext.current
+    val callActionsAuthTitle = stringResource(R.string.settings_call_actions_auth_title)
+    val callActionsAuthSubtitle = stringResource(R.string.settings_call_actions_auth_subtitle)
+    val callActionsAuthError = stringResource(R.string.settings_call_actions_auth_error)
+
+    val saveSettings = {
+        if (viewModel.callActionsChanged()) {
+            BiometricPromptHelper.authenticate(
+                context = context,
+                title = callActionsAuthTitle,
+                subtitle = callActionsAuthSubtitle,
+                onSuccess = { viewModel.saveSettings(onSave) },
+                onCryptoFailure = {
+                    Toast.makeText(context, callActionsAuthError, Toast.LENGTH_LONG).show()
+                },
+                onError = {
+                    Toast.makeText(context, callActionsAuthError, Toast.LENGTH_LONG).show()
+                }
+            )
+        } else {
+            viewModel.saveSettings(onSave)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -72,7 +99,7 @@ fun SettingsScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { viewModel.saveSettings(onSave) },
+                onClick = { saveSettings() },
                 icon = { },
                 text = { Text(stringResource(R.string.settings_save), fontWeight = FontWeight.Bold) },
                 containerColor = MaterialTheme.colorScheme.primary,

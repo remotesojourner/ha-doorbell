@@ -23,6 +23,11 @@ class SettingsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
+    private var savedAnswerActionService = ""
+    private var savedAnswerActionEntityId = ""
+    private var savedHangupActionService = ""
+    private var savedHangupActionEntityId = ""
+
     init {
         loadSettings()
     }
@@ -30,6 +35,10 @@ class SettingsViewModel @Inject constructor(
     private fun loadSettings() {
         viewModelScope.launch {
             val settings = getSettingsUseCase().first()
+            savedAnswerActionService = settings.answerActionService
+            savedAnswerActionEntityId = settings.answerActionEntityId
+            savedHangupActionService = settings.hangupActionService
+            savedHangupActionEntityId = settings.hangupActionEntityId
             _uiState.update {
                 it.copy(
                     url = settings.url,
@@ -72,6 +81,14 @@ class SettingsViewModel @Inject constructor(
     fun updateHangupActionService(value: String) { _uiState.update { it.copy(hangupActionService = value) } }
     fun updateHangupActionEntityId(value: String) { _uiState.update { it.copy(hangupActionEntityId = value) } }
 
+    fun callActionsChanged(): Boolean {
+        val currentState = _uiState.value
+        return currentState.answerActionService != savedAnswerActionService ||
+            currentState.answerActionEntityId != savedAnswerActionEntityId ||
+            currentState.hangupActionService != savedHangupActionService ||
+            currentState.hangupActionEntityId != savedHangupActionEntityId
+    }
+
     fun saveSettings(onComplete: () -> Unit) {
         viewModelScope.launch {
             val currentState = _uiState.value
@@ -91,6 +108,10 @@ class SettingsViewModel @Inject constructor(
                 hangupActionEntityId = currentState.hangupActionEntityId
             )
             saveSettingsUseCase(settings)
+            savedAnswerActionService = settings.answerActionService
+            savedAnswerActionEntityId = settings.answerActionEntityId
+            savedHangupActionService = settings.hangupActionService
+            savedHangupActionEntityId = settings.hangupActionEntityId
             onComplete()
         }
     }

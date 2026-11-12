@@ -25,6 +25,9 @@
     <string name="settings_answer_entity">Answer Target Entity (optional)</string>
     <string name="settings_hangup_action">Hang Up Service</string>
     <string name="settings_hangup_entity">Hang Up Target Entity (optional)</string>
+    <string name="settings_call_actions_auth_title">Change Call Actions</string>
+    <string name="settings_call_actions_auth_subtitle">Authenticate to save call actions</string>
+    <string name="settings_call_actions_auth_error">Authentication required to save call actions</string>
     
     <string name="stream_connection_failed">Connection Failed</string>
     <string name="stream_connecting">Connecting to Doorbell...</string>

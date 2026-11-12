@@ -93,10 +93,10 @@ class SettingsViewModelTest {
         val onComplete = { onCompleteCalled = true }
 
         viewModel.updateUrl("https://updated.url")
-        
+
         viewModel.saveSettings(onComplete)
 
-        coVerify { 
+        coVerify {
             saveSettingsUseCase(
                 Settings(
                     url = "https://updated.url",
@@ -116,5 +116,50 @@ class SettingsViewModelTest {
             )
         }
         assertTrue(onCompleteCalled)
+    }
+
+    @Test
+    fun `call actions are unchanged right after loading`() = runTest {
+        assertFalse(viewModel.callActionsChanged())
+    }
+
+    @Test
+    fun `changing the answer action requires authentication`() = runTest {
+        viewModel.updateAnswerActionService("lock.unlock")
+        assertTrue(viewModel.callActionsChanged())
+
+        viewModel.updateAnswerActionService("switch.turn_on")
+        assertFalse(viewModel.callActionsChanged())
+
+        viewModel.updateAnswerActionEntityId("lock.front_door")
+        assertTrue(viewModel.callActionsChanged())
+    }
+
+    @Test
+    fun `changing the hang up action requires authentication`() = runTest {
+        viewModel.updateHangupActionService("script.doorbell_hangup")
+        assertTrue(viewModel.callActionsChanged())
+
+        viewModel.updateHangupActionEntityId("script.doorbell_hangup")
+        assertTrue(viewModel.callActionsChanged())
+    }
+
+    @Test
+    fun `unrelated settings do not require authentication`() = runTest {
+        viewModel.updateUrl("https://other.url")
+        viewModel.updateToken("other-token")
+        viewModel.updateDoorEntityId("switch.other_relay")
+
+        assertFalse(viewModel.callActionsChanged())
+    }
+
+    @Test
+    fun `saving keeps the saved call actions in sync`() = runTest {
+        viewModel.updateAnswerActionService("lock.unlock")
+        assertTrue(viewModel.callActionsChanged())
+
+        viewModel.saveSettings {}
+
+        assertFalse(viewModel.callActionsChanged())
     }
 }
