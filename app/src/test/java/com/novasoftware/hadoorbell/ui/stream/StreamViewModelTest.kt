@@ -350,6 +350,37 @@ class StreamViewModelTest {
     }
 
     @Test
+    fun `a call that never connects is cancelled and disconnected after the timeout`() = runTest {
+        val pendingConnection = Job()
+        every { webRtcManager.startConnection(any(), any(), any()) } returns pendingConnection
+
+        val events = mutableListOf<UiEvent>()
+        val collector = launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiEvent.collect { events.add(it) }
+        }
+
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+        viewModel.startStream(videoSink)
+
+        viewModel.answerCall(context)
+        advanceTimeBy(200)
+        runCurrent()
+        viewModel.startStream(videoSink)
+        runCurrent()
+
+        advanceUntilIdle()
+
+        assertTrue(pendingConnection.isCancelled)
+        verify { webRtcManager.setMicrophoneEnabled(false) }
+        verify(atLeast = 1) { webRtcManager.disconnect() }
+        assertFalse(viewModel.uiState.value.isMicEnabled)
+        coVerify(exactly = 0) { repository.callService(any(), any(), any()) }
+        assertTrue(events.any { it is UiEvent.ShowToast && it.message.contains("no connection") })
+        collector.cancel()
+    }
+
+    @Test
     fun `door action requests biometric authentication before opening`() = runTest {
         every { appPreferences.doorEntityIdFlow } returns flowOf("switch.door_relay")
 

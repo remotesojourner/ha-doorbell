@@ -164,6 +164,7 @@ class StreamViewModel @Inject constructor(
                 restartConnection(context)
 
                 if (!awaitConnectionReady()) {
+                    abortFailedCall(context)
                     _uiState.update { it.copy(isMicEnabled = false) }
                     _uiEvent.emit(UiEvent.ShowToast("Call setup failed: no connection", long = true))
                     return@launch
@@ -267,6 +268,21 @@ class StreamViewModel @Inject constructor(
 
         val completed = withTimeoutOrNull(CONNECTION_TIMEOUT_MS) { connection.join() }
         return completed != null && _uiState.value.errorMessage == null
+    }
+
+    private suspend fun abortFailedCall(context: Context) {
+        val manager = _uiState.value.webRtcManager
+        // Mute first: the local track stays alive until the asynchronous teardown runs.
+        manager?.setMicrophoneEnabled(false)
+        activeConnection.value?.cancel()
+        activeConnection.value = null
+
+        if (isScreenActive) {
+            // Recreate a listen-only session so the preview recovers and the next Call starts clean.
+            restartConnection(context)
+        } else {
+            manager?.disconnect()
+        }
     }
 
     fun toggleStreamMute() {
