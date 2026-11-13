@@ -81,7 +81,7 @@ class SettingsViewModelTest {
         viewModel.updateInstantTwoWayAudio(true)
         assertTrue(viewModel.uiState.value.instantTwoWayAudio)
 
-        val reply = StreamButton("reply", "Quick Reply", StreamButtonAction.QuickReply("select.reply"))
+        val reply = StreamButton("reply", StreamButtonAction.QuickReply("select.reply"))
         viewModel.updateStreamButtonLayout(StreamButtonLayout(top = listOf(reply)))
 
         assertEquals(listOf(reply), viewModel.uiState.value.streamButtonLayout.top)
@@ -203,7 +203,6 @@ class SettingsViewModelTest {
     fun `moving a protected button preserves its action and authentication`() = runTest {
         val door = StreamButton(
             id = "door",
-            label = "Open door",
             action = StreamButtonAction.Press("button.door"),
             requiresAuthentication = true
         )

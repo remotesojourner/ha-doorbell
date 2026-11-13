@@ -31,7 +31,7 @@ class SaveSettingsUseCaseTest {
             instantTwoWayAudio = true,
             webrtcProvider = "webrtc",
             streamButtonLayout = StreamButtonLayout(bottom = listOf(
-                StreamButton("chime", "Chime", StreamButtonAction.Press("button.chime"))
+                StreamButton("chime", StreamButtonAction.Press("button.chime"))
             ))
         )
 

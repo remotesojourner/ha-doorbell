@@ -11,5 +11,4 @@
     <string name="stream_lock_unlocking">Unlocking</string>
     <string name="stream_lock_jammed">Jammed</string>
     <string name="stream_lock_unknown">Lock status unknown</string>
-    <string name="stream_door_lock">Door Lock</string>
 </resources>

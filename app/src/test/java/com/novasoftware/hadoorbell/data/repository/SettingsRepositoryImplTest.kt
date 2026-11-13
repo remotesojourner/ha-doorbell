@@ -85,17 +85,18 @@ class SettingsRepositoryImplTest {
     @Test
     fun `saved layouts preserve row order protected actions and icons`() = runTest {
         val unlock = StreamButton(
-            "unlock", "Unlock", StreamButtonAction.TurnOn("switch.door_relay"),
+            "unlock", StreamButtonAction.TurnOn("switch.door_relay"),
             requiresAuthentication = true,
             icon = "mdi:gate",
-            entityIcon = "mdi:toggle-switch"
+            entityIcon = "mdi:toggle-switch",
+            entityName = "Door relay"
         )
         val light = StreamButton(
-            "light", "Porch light", StreamButtonAction.Toggle("light.porch"),
+            "light", StreamButtonAction.Toggle("light.porch"),
             entityIcon = "mdi:outdoor-lamp"
         )
         val reply = StreamButton(
-            "reply", "Leave at door", StreamButtonAction.SelectOption("select.reply", "Leave at door")
+            "reply", StreamButtonAction.SelectOption("select.reply", "Leave at door")
         )
         val layout = StreamButtonLayout(top = listOf(light, unlock), bottom = listOf(reply))
 
@@ -109,7 +110,7 @@ class SettingsRepositoryImplTest {
 
     @Test
     fun `deleting all buttons persists empty rows`() = runTest {
-        val button = StreamButton("chime", "Chime", StreamButtonAction.Press("button.chime"))
+        val button = StreamButton("chime", StreamButtonAction.Press("button.chime"))
         appPreferences.saveSettings(
             "https://home.local", "token", "camera",
             streamButtonLayout = StreamButtonLayout(bottom = listOf(button))

@@ -195,16 +195,18 @@ private fun StreamButtonListItem(
     val actionLabel = stringResource(actionKind.label)
     val details = when (val action = button.action) {
         is StreamButtonAction.SelectOption -> action.option
-        else -> action.entityId
+        else -> action.entityId.takeUnless { it == button.displayName }
     }
+    val actionSummary = details?.let { stringResource(R.string.stream_button_action_summary, actionLabel, it) }
+        ?: actionLabel
     ListItem(
         headlineContent = {
-            Text(button.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(button.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         supportingContent = {
             Column {
                 Text(
-                    stringResource(R.string.stream_button_action_summary, actionLabel, details),
+                    actionSummary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -224,7 +226,7 @@ private fun StreamButtonListItem(
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(
                         Icons.Default.MoreVert,
-                        contentDescription = stringResource(R.string.stream_button_menu, button.label)
+                        contentDescription = stringResource(R.string.stream_button_menu, button.displayName)
                     )
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -292,7 +294,6 @@ private fun EditStreamButtonDialog(
     onSave: (StreamButton) -> Unit
 ) {
     var kind by rememberSaveable { mutableStateOf(ActionKind.from(existing?.action)) }
-    var label by rememberSaveable { mutableStateOf(existing?.label.orEmpty()) }
     var entityId by rememberSaveable { mutableStateOf(existing?.action?.entityId) }
     var option by rememberSaveable {
         mutableStateOf((existing?.action as? StreamButtonAction.SelectOption)?.option)
@@ -304,10 +305,12 @@ private fun EditStreamButtonDialog(
     }
     var icon by rememberSaveable { mutableStateOf(existing?.icon) }
     var cachedEntityIcon by rememberSaveable { mutableStateOf(existing?.entityIcon) }
+    var cachedEntityName by rememberSaveable { mutableStateOf(existing?.entityName) }
     var showPicker by rememberSaveable { mutableStateOf(false) }
     var showIconPicker by rememberSaveable { mutableStateOf(false) }
     val entity = entities.find { it.entityId == entityId }
-    val currentEntityIcon = entity?.icon ?: cachedEntityIcon
+    val currentEntityIcon = if (entity != null) entity.icon else cachedEntityIcon
+    val currentEntityName = entity?.name?.takeIf(String::isNotBlank) ?: cachedEntityName
     val automaticIcon = currentEntityIcon ?: entityId?.let(::defaultHomeAssistantIcon)
     val defaultDoorService = if (kind == ActionKind.OPEN_DOOR) {
         OpenDoorUseCase.defaultServiceFor(entityId.orEmpty())
@@ -334,15 +337,11 @@ private fun EditStreamButtonDialog(
             selectedEntityId = entityId,
             onSelect = { selected ->
                 if (entityId != selected.entityId) {
-                    if (label.isBlank() || label == entity?.name || label == option) {
-                        label = selected.name
-                    }
                     entityId = selected.entityId
                     option = null
-                    cachedEntityIcon = selected.icon
-                } else if (selected.icon != null) {
-                    cachedEntityIcon = selected.icon
                 }
+                cachedEntityIcon = selected.icon
+                cachedEntityName = selected.name.takeIf(String::isNotBlank)
                 showPicker = false
             }
         )
@@ -384,6 +383,7 @@ private fun EditStreamButtonDialog(
                                 if (!nextKind.acceptsDomain(currentEntityId.substringBefore('.'))) {
                                     entityId = null
                                     cachedEntityIcon = null
+                                    cachedEntityName = null
                                 }
                             }
                             option = null
@@ -399,7 +399,7 @@ private fun EditStreamButtonDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = entity?.name ?: entityId ?: stringResource(R.string.stream_button_choose_entity),
+                        text = currentEntityName ?: entityId ?: stringResource(R.string.stream_button_choose_entity),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -413,12 +413,7 @@ private fun EditStreamButtonDialog(
                             displayValue = option ?: stringResource(R.string.stream_button_choose_option),
                             choices = options,
                             choiceLabel = { it },
-                            onSelect = { nextOption ->
-                                if (label.isBlank() || label == entity?.name || label == option) {
-                                    label = nextOption
-                                }
-                                option = nextOption
-                            }
+                            onSelect = { option = it }
                         )
                     } else {
                         option?.let { Text(stringResource(R.string.stream_button_current_option, it)) }
@@ -466,14 +461,6 @@ private fun EditStreamButtonDialog(
                         singleLine = true
                     )
                 }
-
-                OutlinedTextField(
-                    value = label,
-                    onValueChange = { label = it },
-                    label = { Text(stringResource(R.string.stream_button_label)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
 
                 Column {
                     Text(
@@ -531,18 +518,18 @@ private fun EditStreamButtonDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = label.isNotBlank() && action != null,
+                enabled = action != null,
                 onClick = {
                     if (action != null) {
                         onSave(
                             StreamButton(
                                 id = existing?.id ?: UUID.randomUUID().toString(),
-                                label = label.trim(),
                                 action = action,
                                 requiresAuthentication = kind.requiresAuthentication || requiresAuthentication,
                                 visible = existing?.visible ?: true,
                                 icon = icon,
-                                entityIcon = currentEntityIcon
+                                entityIcon = currentEntityIcon,
+                                entityName = currentEntityName
                             )
                         )
                     }

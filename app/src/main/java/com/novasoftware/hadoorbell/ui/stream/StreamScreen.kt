@@ -14,18 +14,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -75,12 +72,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -108,7 +102,6 @@ fun StreamScreen(
     val context = LocalContext.current
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val topButtons = uiState.streamButtonLayout.top.filter(StreamButton::visible)
 
     val authFailedText = stringResource(R.string.authentication_unavailable)
     val resources by rememberUpdatedState(LocalResources.current)
@@ -131,7 +124,7 @@ fun StreamScreen(
                         title = if (action is StreamButtonAction.DoorLock) {
                             resources.getString(R.string.stream_unlock_door)
                         } else {
-                            resources.getString(R.string.stream_button_auth_title, event.button.label)
+                            resources.getString(R.string.stream_button_auth_title, event.button.displayName)
                         },
                         subtitle = resources.getString(
                             if (action is StreamButtonAction.DoorLock) R.string.stream_authenticate_unlock
@@ -264,43 +257,15 @@ fun StreamScreen(
                 )
         )
 
-        // Overlay UI (Top Bar)
-        Row(
+        StreamTopControls(
+            uiState = uiState,
+            onSettingsClick = onNavigateToSettings,
+            onCloseClick = onExit,
+            onButtonClick = viewModel::handleStreamButton,
             modifier = Modifier
-                .fillMaxWidth()
                 .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 16.dp)
-                .padding(horizontal = 16.dp)
-                .align(Alignment.TopCenter),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = onNavigateToSettings,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.2f))
-            ) {
-                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
-            }
-
-            if (topButtons.isNotEmpty()) {
-                Row(
-                    modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    StreamActions(topButtons, uiState, viewModel::handleStreamButton)
-                }
-            }
-
-            IconButton(
-                onClick = onExit,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.2f))
-            ) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-            }
-        }
+                .align(Alignment.TopCenter)
+        )
 
         // Bottom Gradient Overlay
         Box(
@@ -333,6 +298,62 @@ fun StreamScreen(
             onDismiss = viewModel::dismissQuickReplySheet,
             onSelect = viewModel::sendQuickReply
         )
+    }
+}
+
+@Composable
+private fun StreamTopControls(
+    uiState: StreamUiState,
+    onSettingsClick: () -> Unit,
+    onCloseClick: () -> Unit,
+    onButtonClick: (StreamButton) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val buttons = uiState.streamButtonLayout.top.filter(StreamButton::visible)
+    Row(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            onClick = onSettingsClick,
+            modifier = Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.2f))
+        ) {
+            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
+        }
+
+        if (buttons.isNotEmpty()) {
+            Row(
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                buttons.forEach { button ->
+                    key(button.id) {
+                        Box(
+                            modifier = Modifier.weight(1f).padding(horizontal = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            StreamActionButton(
+                                button = button,
+                                enabled = uiState.canRun(button),
+                                lockState = uiState.lockStates[button.action.entityId] ?: LockState.Unknown,
+                                entityIcons = uiState.entityIcons,
+                                onClick = { onButtonClick(button) },
+                                circleSize = 48.dp,
+                                iconSize = 24.dp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        IconButton(
+            onClick = onCloseClick,
+            modifier = Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.2f))
+        ) {
+            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+        }
     }
 }
 
@@ -413,7 +434,8 @@ internal fun StreamBottomControls(
                         lockState = uiState.lockStates[button.action.entityId] ?: LockState.Unknown,
                         entityIcons = uiState.entityIcons,
                         onClick = { onButtonClick(button) },
-                        circleSize = actionSize
+                        circleSize = actionSize,
+                        iconSize = 28.dp
                     )
                 }
             }
@@ -435,7 +457,7 @@ private fun QuickReplySheet(
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Text(
-                text = sheet.button.label,
+                text = stringResource(R.string.stream_quick_reply),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 16.dp)
@@ -483,37 +505,14 @@ private fun QuickReplySheet(
 }
 
 @Composable
-private fun RowScope.StreamActions(
-    buttons: List<StreamButton>,
-    uiState: StreamUiState,
-    onButtonClick: (StreamButton) -> Unit
-) {
-    buttons.forEach { button ->
-        key(button.id) {
-            Box(
-                modifier = Modifier.weight(1f).padding(horizontal = 2.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                StreamActionButton(
-                    button = button,
-                    enabled = uiState.canRun(button),
-                    lockState = uiState.lockStates[button.action.entityId] ?: LockState.Unknown,
-                    entityIcons = uiState.entityIcons,
-                    onClick = { onButtonClick(button) }
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun StreamActionButton(
     button: StreamButton,
     enabled: Boolean,
     lockState: LockState,
     entityIcons: Map<String, String?>,
     onClick: () -> Unit,
-    circleSize: Dp? = null
+    circleSize: Dp,
+    iconSize: Dp
 ) {
     val isLock = button.action is StreamButtonAction.DoorLock
     val fallbackIcon = when (button.action) {
@@ -566,77 +565,21 @@ private fun StreamActionButton(
         )
         angle
     } else 0f
-    val renderIcon: @Composable (Dp, String?) -> Unit = { size, description ->
-        val modifier = Modifier.size(size)
-        if (resolvedIcon == null) {
-            Icon(fallbackIcon, description, modifier.rotate(rotation))
-        } else {
-            StreamButtonIcon(resolvedIcon, description, modifier)
-        }
-    }
-
-    if (circleSize != null) {
-        val legacyLabel = when (button.action) {
-            is StreamButtonAction.QuickReply -> stringResource(R.string.stream_quick_reply)
-            is StreamButtonAction.OpenDoor -> stringResource(R.string.stream_open_door)
-            is StreamButtonAction.DoorLock -> stringResource(R.string.stream_door_lock)
-            else -> null
-        }
-        val showLabel = button.label != legacyLabel
-        Surface(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = Modifier.size(circleSize).then(lockSemantics),
-            shape = CircleShape,
-            color = background,
-            contentColor = Color.White
-        ) {
-            if (showLabel) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    renderIcon(24.dp, button.label)
-                    Text(
-                        text = button.label,
-                        modifier = Modifier.clearAndSetSemantics { },
-                        style = MaterialTheme.typography.labelSmall,
-                        textAlign = TextAlign.Center,
-                        maxLines = if (circleSize >= 56.dp) 2 else 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            } else {
-                Box(contentAlignment = Alignment.Center) {
-                    renderIcon(28.dp, button.label)
-                }
-            }
-        }
-        return
-    }
-
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.widthIn(max = 88.dp).fillMaxWidth().then(lockSemantics),
-        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.size(circleSize).then(lockSemantics),
+        shape = CircleShape,
         color = background,
         contentColor = Color.White.copy(alpha = if (enabled || isLock) 1f else 0.5f)
     ) {
-        Column(
-            modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 4.dp, vertical = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            renderIcon(20.dp, null)
-            Text(
-                text = button.label,
-                style = MaterialTheme.typography.labelSmall,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+        Box(contentAlignment = Alignment.Center) {
+            val modifier = Modifier.size(iconSize)
+            if (resolvedIcon == null) {
+                Icon(fallbackIcon, button.displayName, modifier.rotate(rotation))
+            } else {
+                StreamButtonIcon(resolvedIcon, button.displayName, modifier)
+            }
         }
     }
 }

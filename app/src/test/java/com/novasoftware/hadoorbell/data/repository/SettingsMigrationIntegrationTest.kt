@@ -46,7 +46,7 @@ class SettingsMigrationIntegrationTest {
 
         assertEquals(
             listOf(StreamButton(
-                "legacy-door-lock", "Door Lock", StreamButtonAction.DoorLock("lock.entry"),
+                "legacy-door-lock", StreamButtonAction.DoorLock("lock.entry"),
                 requiresAuthentication = true
             )),
             layout.bottom

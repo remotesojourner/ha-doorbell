@@ -135,7 +135,7 @@ class SettingsScreenTest {
         }
 
         composeTestRule.runOnIdle {
-            val reply = StreamButton("reply", "Quick Reply", StreamButtonAction.QuickReply("select.reply"))
+            val reply = StreamButton("reply", StreamButtonAction.QuickReply("select.reply"))
             viewModel.updateStreamButtonLayout(StreamButtonLayout(bottom = listOf(reply)))
         }
         composeTestRule.onNodeWithText("Call").performSemanticsAction(SemanticsActions.OnClick)
@@ -188,9 +188,9 @@ class SettingsScreenTest {
         composeTestRule.runOnIdle {
             val door = StreamButton(
                 id = "legacy_open_door",
-                label = "Front Door",
                 action = StreamButtonAction.OpenDoor("switch.door_relay", "switch.turn_on"),
-                requiresAuthentication = true
+                requiresAuthentication = true,
+                entityName = "Front Door"
             )
             viewModel.updateStreamButtonLayout(StreamButtonLayout(bottom = listOf(door)))
         }

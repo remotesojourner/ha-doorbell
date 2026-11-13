@@ -127,12 +127,12 @@ class StreamViewModelTest {
 
     @Test
     fun `automatic icons refresh once per visible entity without delaying WebRTC`() = runTest {
-        val lamp = StreamButton("lamp", "Porch light", StreamButtonAction.Toggle("light.porch"))
+        val lamp = StreamButton("lamp", StreamButtonAction.Toggle("light.porch"))
         val lampAgain = lamp.copy(id = "lamp-copy")
-        val override = StreamButton("gate", "Gate", StreamButtonAction.Press("button.gate"), icon = "mdi:gate")
-        val hidden = StreamButton("hidden", "Hidden", StreamButtonAction.Toggle("switch.hidden"), visible = false)
-        val noIcon = StreamButton("reply", "Reply", StreamButtonAction.QuickReply("select.reply"), entityIcon = "mdi:chat")
-        val failed = StreamButton("script", "Script", StreamButtonAction.RunScript("script.front"), entityIcon = "mdi:star")
+        val override = StreamButton("gate", StreamButtonAction.Press("button.gate"), icon = "mdi:gate")
+        val hidden = StreamButton("hidden", StreamButtonAction.Toggle("switch.hidden"), visible = false)
+        val noIcon = StreamButton("reply", StreamButtonAction.QuickReply("select.reply"), entityIcon = "mdi:chat")
+        val failed = StreamButton("script", StreamButtonAction.RunScript("script.front"), entityIcon = "mdi:star")
         val layout = StreamButtonLayout(
             top = listOf(lamp, override, hidden),
             bottom = listOf(lampAgain, noIcon, failed)
@@ -179,8 +179,8 @@ class StreamViewModelTest {
 
     @Test
     fun `returning to the stream loads the new layout and enables instant audio once Quick Reply is removed`() = runTest {
-        val lock = StreamButton("lock", "Front door", StreamButtonAction.DoorLock("lock.front"))
-        val reply = StreamButton("reply", "Front reply", StreamButtonAction.QuickReply("select.front_reply"))
+        val lock = StreamButton("lock", StreamButtonAction.DoorLock("lock.front"))
+        val reply = StreamButton("reply", StreamButtonAction.QuickReply("select.front_reply"))
         val original = StreamButtonLayout(bottom = listOf(lock, reply))
         val revised = StreamButtonLayout(top = listOf(lock))
         every { appPreferences.streamButtonLayoutFlow } returns flowOf(original)
@@ -206,10 +206,9 @@ class StreamViewModelTest {
 
     @Test
     fun `custom actions require the matching authentication request only when protected`() = runTest {
-        val toggle = StreamButton("light", "Porch light", StreamButtonAction.Toggle("light.porch"))
+        val toggle = StreamButton("light", StreamButtonAction.Toggle("light.porch"))
         val press = StreamButton(
             id = "door",
-            label = "Open door",
             action = StreamButtonAction.Press("button.door"),
             requiresAuthentication = true
         )
@@ -257,8 +256,8 @@ class StreamViewModelTest {
 
     @Test
     fun `two quick reply buttons load and send options for their own entities`() = runTest {
-        val front = StreamButton("front", "Front reply", StreamButtonAction.QuickReply("select.front"))
-        val side = StreamButton("side", "Side reply", StreamButtonAction.QuickReply("input_select.side"))
+        val front = StreamButton("front", StreamButtonAction.QuickReply("select.front"))
+        val side = StreamButton("side", StreamButtonAction.QuickReply("input_select.side"))
         every { appPreferences.streamButtonLayoutFlow } returns
             flowOf(StreamButtonLayout(top = listOf(front), bottom = listOf(side)))
         coEvery { getSelectOptionsUseCase("select.front") } returns Result.success(listOf("Hello"))
@@ -502,7 +501,7 @@ class StreamViewModelTest {
 
     @Test
     fun `door action requests biometric authentication before opening`() = runTest {
-        val door = StreamButton("door", "Side door", StreamButtonAction.OpenDoor("switch.door_relay", "switch.turn_on"))
+        val door = StreamButton("door", StreamButtonAction.OpenDoor("switch.door_relay", "switch.turn_on"))
         every { appPreferences.streamButtonLayoutFlow } returns flowOf(StreamButtonLayout(bottom = listOf(door)))
         coEvery { openDoorUseCase("switch.door_relay", "switch.turn_on") } returns Result.success(Unit)
         val requests = mutableListOf<UiEvent.AuthenticateStreamButton>()
@@ -525,8 +524,8 @@ class StreamViewModelTest {
 
     @Test
     fun `lock buttons show each entity state and authenticate unlocking only`() = runTest {
-        val front = StreamButton("front", "Front lock", StreamButtonAction.DoorLock("lock.front"))
-        val side = StreamButton("side", "Side lock", StreamButtonAction.DoorLock("lock.side"), true)
+        val front = StreamButton("front", StreamButtonAction.DoorLock("lock.front"))
+        val side = StreamButton("side", StreamButtonAction.DoorLock("lock.side"), requiresAuthentication = true)
         every { appPreferences.streamButtonLayoutFlow } returns
             flowOf(StreamButtonLayout(top = listOf(front), bottom = listOf(side)))
         coEvery { repository.getEntityState("lock.side") } returns Result.success("unlocked")
@@ -561,8 +560,10 @@ class StreamViewModelTest {
     }
 
     @Test
-    fun `open door failures are reported using the configured label`() = runTest {
-        val door = StreamButton("door", "Side door", StreamButtonAction.OpenDoor("switch.door_relay"))
+    fun `open door failures are reported using the entity name`() = runTest {
+        val door = StreamButton(
+            "door", StreamButtonAction.OpenDoor("switch.door_relay"), entityName = "Side door"
+        )
         every { appPreferences.streamButtonLayoutFlow } returns flowOf(StreamButtonLayout(bottom = listOf(door)))
         coEvery { openDoorUseCase("switch.door_relay", "") } returns Result.failure(RuntimeException("relay offline"))
         every { context.getString(R.string.stream_button_failed, "Side door", "relay offline") } returns

@@ -2,13 +2,15 @@ package com.novasoftware.hadoorbell.domain.model
 
 data class StreamButton(
     val id: String,
-    val label: String,
     val action: StreamButtonAction,
     val requiresAuthentication: Boolean = false,
     val visible: Boolean = true,
     val icon: String? = null,
-    val entityIcon: String? = null
-)
+    val entityIcon: String? = null,
+    val entityName: String? = null
+) {
+    val displayName: String get() = entityName?.takeIf { it.isNotBlank() } ?: action.entityId
+}
 
 data class StreamButtonLayout(
     val top: List<StreamButton> = emptyList(),

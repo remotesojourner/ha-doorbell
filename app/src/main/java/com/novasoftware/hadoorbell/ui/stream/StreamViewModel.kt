@@ -400,7 +400,7 @@ class StreamViewModel @Inject constructor(
             _uiState.update { state ->
                 if (state.quickReplySheet !== sheet) return@update state
                 val error = result.exceptionOrNull()?.let {
-                    appContext.getString(R.string.stream_button_failed, button.label, errorReason(it))
+                    appContext.getString(R.string.stream_button_failed, button.displayName, errorReason(it))
                 }
                 state.copy(quickReplySheet = sheet.copy(options = result.getOrNull(), error = error))
             }
@@ -451,7 +451,7 @@ class StreamViewModel @Inject constructor(
     }
 
     private suspend fun showButtonFailure(button: StreamButton, error: Throwable) {
-        val message = appContext.getString(R.string.stream_button_failed, button.label, errorReason(error))
+        val message = appContext.getString(R.string.stream_button_failed, button.displayName, errorReason(error))
         _uiEvent.emit(UiEvent.ShowToast(message, long = true))
     }
 

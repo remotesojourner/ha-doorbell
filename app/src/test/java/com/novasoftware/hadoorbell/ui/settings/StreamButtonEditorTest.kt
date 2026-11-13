@@ -13,7 +13,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.Modifier
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
@@ -83,12 +82,12 @@ class StreamButtonEditorTest {
                 StreamButtonAction.SelectOption("select.doorbell_reply", "Leave parcel"),
                 layout.top.single().action
             )
-            assertEquals("Leave parcel", layout.top.single().label)
+            assertEquals("Doorbell replies", layout.top.single().entityName)
             assertEquals("package-variant", layout.top.single().icon)
             assertEquals("mdi:message-text", layout.top.single().entityIcon)
         }
 
-        composeTestRule.onNodeWithText("Leave parcel").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Doorbell replies").performScrollTo().performClick()
         composeTestRule.onNodeWithText("package variant").performScrollTo().performClick()
         composeTestRule.onNodeWithText("Automatic").performClick()
         composeTestRule.onNodeWithText("Done").performClick()
@@ -100,13 +99,13 @@ class StreamButtonEditorTest {
 
     @Test
     fun `moving a button between rows preserves the button and existing order`() {
-        val light = StreamButton("light", "Porch light", StreamButtonAction.Toggle("light.porch"))
-        val chime = StreamButton("chime", "Chime", StreamButtonAction.Press("button.chime"))
+        val light = StreamButton("light", StreamButtonAction.Toggle("light.porch"), entityName = "Porch light")
+        val chime = StreamButton("chime", StreamButtonAction.Press("button.chime"), entityName = "Chime")
         val relay = StreamButton(
             "relay",
-            "Gate relay",
             StreamButtonAction.Toggle("switch.gate_relay"),
-            requiresAuthentication = true
+            requiresAuthentication = true,
+            entityName = "Gate relay"
         )
         var layout by mutableStateOf(StreamButtonLayout(top = listOf(light, relay), bottom = listOf(chime)))
         composeTestRule.setContent {
@@ -136,10 +135,9 @@ class StreamButtonEditorTest {
     }
 
     @Test
-    fun `renaming a migrated door button retains its service and protection`() {
+    fun `editing a migrated door button retains its service and protection`() {
         val door = StreamButton(
             "legacy-door",
-            "Door release",
             StreamButtonAction.OpenDoor("switch.door_relay", "switch.turn_on"),
             requiresAuthentication = true,
             visible = false
@@ -160,24 +158,23 @@ class StreamButtonEditorTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Door release").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("switch.door_relay").performScrollTo().performClick()
         composeTestRule.onNodeWithText("Door service").assertExists()
         composeTestRule.onNodeWithText("If this device has a screen lock, it asks you to authenticate before opening the door.")
             .assertExists()
-        composeTestRule.onNodeWithText("Button label").performScrollTo().performTextReplacement("Open side door")
         composeTestRule.onNodeWithText("Done").performClick()
 
         composeTestRule.onNodeWithText("Hidden on stream").assertExists()
         composeTestRule.runOnIdle {
-            assertEquals(door.copy(label = "Open side door"), layout.bottom.single())
+            assertEquals(door, layout.bottom.single())
         }
 
-        composeTestRule.onNodeWithContentDescription("Options for Open side door")
+        composeTestRule.onNodeWithContentDescription("Options for switch.door_relay")
             .performScrollTo().performClick()
         composeTestRule.onNodeWithText("Show on stream").performClick()
         composeTestRule.onNodeWithText("Hidden on stream").assertDoesNotExist()
         composeTestRule.runOnIdle {
-            assertEquals(door.copy(label = "Open side door", visible = true), layout.bottom.single())
+            assertEquals(door.copy(visible = true), layout.bottom.single())
         }
     }
 }

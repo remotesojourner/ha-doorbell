@@ -19,7 +19,9 @@ internal object StreamButtonLayoutMigration : DataMigration<Preferences> {
 
     override suspend fun shouldMigrate(currentData: Preferences): Boolean =
         previousKeys.any { it in currentData } ||
-            currentData[STREAM_BUTTON_LAYOUT]?.let { !StreamButtonLayoutJson.hasVisibilityMarker(it) } == true
+            currentData[STREAM_BUTTON_LAYOUT]?.let {
+                !StreamButtonLayoutJson.hasVisibilityMarker(it) || StreamButtonLayoutJson.hasLegacyLabels(it)
+            } == true
 
     override suspend fun migrate(currentData: Preferences): Preferences {
         val previousJson = currentData[STREAM_BUTTON_LAYOUT]
@@ -30,7 +32,7 @@ internal object StreamButtonLayoutMigration : DataMigration<Preferences> {
             previousEnabled == false -> mergeDrafts(originalButtons, previousLayout)
             originalButtons.isNotEmpty() -> appendOriginalButtons(previousLayout, originalButtons)
             previousJson != null && !StreamButtonLayoutJson.hasVisibilityMarker(previousJson) ->
-                restorePreviewVisibility(previousLayout)
+                restorePreviewVisibility(previousLayout, StreamButtonLayoutJson.legacyBottomLabels(previousJson))
             else -> previousLayout
         }
         return currentData.toMutablePreferences().apply {
@@ -43,13 +45,12 @@ internal object StreamButtonLayoutMigration : DataMigration<Preferences> {
 
     private fun originalButtons(preferences: Preferences): List<StreamButton> = buildList {
         preferences.entityId(quickReplyKey)?.let { entityId ->
-            add(StreamButton("legacy-quick-reply", "Quick Reply", StreamButtonAction.QuickReply(entityId)))
+            add(StreamButton("legacy-quick-reply", StreamButtonAction.QuickReply(entityId)))
         }
         val doorEntityId = preferences.entityId(doorEntityKey)
         doorEntityId?.let { entityId ->
             add(StreamButton(
                 id = "legacy-open-door",
-                label = "Open Door",
                 action = StreamButtonAction.OpenDoor(entityId, preferences[doorServiceKey].orEmpty().trim()),
                 requiresAuthentication = true
             ))
@@ -57,7 +58,6 @@ internal object StreamButtonLayoutMigration : DataMigration<Preferences> {
         preferences.entityId(lockKey)?.let { entityId ->
             add(StreamButton(
                 id = "legacy-door-lock",
-                label = "Door Lock",
                 action = StreamButtonAction.DoorLock(entityId),
                 requiresAuthentication = true,
                 visible = doorEntityId == null
@@ -65,19 +65,23 @@ internal object StreamButtonLayoutMigration : DataMigration<Preferences> {
         }
     }
 
-    private fun restorePreviewVisibility(layout: StreamButtonLayout): StreamButtonLayout {
+    private fun restorePreviewVisibility(layout: StreamButtonLayout, oldLabels: List<String?>): StreamButtonLayout {
         // The earlier migration put both door buttons in the bottom row even when only Open Door
         // appeared in the legacy app. Recognize that original shape without touching edited rows.
         if (layout.top.isNotEmpty() || layout.bottom.size !in 2..3) return layout
+        val expectedLabels = if (layout.bottom.size == 2) listOf("Open Door", "Door Lock")
+            else listOf("Quick Reply", "Open Door", "Door Lock")
+        if (oldLabels != expectedLabels) return layout
+
         val (door, lock) = layout.bottom.takeLast(2)
-        if (door.id != "legacy-open-door" || door.label != "Open Door" ||
+        if (door.id != "legacy-open-door" ||
             door.action !is StreamButtonAction.OpenDoor || !door.requiresAuthentication ||
-            lock.id != "legacy-door-lock" || lock.label != "Door Lock" ||
+            lock.id != "legacy-door-lock" ||
             lock.action !is StreamButtonAction.DoorLock || !lock.requiresAuthentication
         ) return layout
         val reply = layout.bottom.dropLast(2).singleOrNull()
         if (reply != null &&
-            (reply.id != "legacy-quick-reply" || reply.label != "Quick Reply" ||
+            (reply.id != "legacy-quick-reply" ||
                 reply.action !is StreamButtonAction.QuickReply || reply.requiresAuthentication)
         ) return layout
         return layout.copy(bottom = layout.bottom.dropLast(1) + lock.copy(visible = false))
