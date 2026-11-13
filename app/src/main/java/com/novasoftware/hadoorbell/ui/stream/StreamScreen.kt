@@ -9,7 +9,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,6 +74,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -103,18 +104,9 @@ fun StreamScreen(
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val layout = uiState.streamButtonLayout
-    val topButtons = layout?.top.orEmpty()
-    val bottomButtons = layout?.bottom.orEmpty()
-    val hasCustomBottomButtons = bottomButtons.isNotEmpty()
-    val fixedButtonSize = if (hasCustomBottomButtons) 48.dp else 64.dp
-    val isButtonEnabled: (StreamButton) -> Boolean = { button ->
-        uiState.isStreamButtonLayoutReady && button.id !in uiState.runningStreamButtonIds
-    }
+    val hasBottomButtons = layout.bottom.isNotEmpty()
+    val fixedButtonSize = if (hasBottomButtons) 48.dp else 64.dp
 
-    val sheetState = rememberModalBottomSheetState()
-
-    val streamUnlockDoorText = stringResource(R.string.stream_unlock_door)
-    val streamAuthenticateUnlockText = stringResource(R.string.stream_authenticate_unlock)
     val streamAuthBypassedText = stringResource(R.string.stream_auth_bypassed)
     val resources by rememberUpdatedState(LocalResources.current)
 
@@ -129,28 +121,19 @@ fun StreamScreen(
                         if (event.long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
                     ).show()
                 }
-                is UiEvent.RequestBiometricAuth -> {
-                    BiometricPromptHelper.authenticate(
-                        context = context,
-                        title = streamUnlockDoorText,
-                        subtitle = streamAuthenticateUnlockText,
-                        onSuccess = {
-                            if (event.forDoor) {
-                                viewModel.executeOpenDoor()
-                            } else {
-                                viewModel.executeUnlockDoor()
-                            }
-                        },
-                        onCryptoFailure = {
-                            Toast.makeText(context, streamAuthBypassedText, Toast.LENGTH_LONG).show()
-                        }
-                    )
-                }
                 is UiEvent.AuthenticateStreamButton -> {
+                    val action = event.button.action
                     BiometricPromptHelper.authenticate(
                         context = context,
-                        title = resources.getString(R.string.stream_button_auth_title, event.button.label),
-                        subtitle = resources.getString(R.string.stream_button_auth_subtitle),
+                        title = if (action is StreamButtonAction.DoorLock) {
+                            resources.getString(R.string.stream_unlock_door)
+                        } else {
+                            resources.getString(R.string.stream_button_auth_title, event.button.label)
+                        },
+                        subtitle = resources.getString(
+                            if (action is StreamButtonAction.DoorLock) R.string.stream_authenticate_unlock
+                            else R.string.stream_button_auth_subtitle
+                        ),
                         onSuccess = { viewModel.onStreamButtonAuthentication(event, true) },
                         onCryptoFailure = {
                             viewModel.onStreamButtonAuthentication(event, false)
@@ -292,13 +275,13 @@ fun StreamScreen(
                 Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
             }
 
-            if (topButtons.isNotEmpty()) {
-                StreamActionRow(
-                    buttons = topButtons,
-                    enabled = isButtonEnabled,
-                    onButtonClick = viewModel::handleStreamButton,
-                    modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
-                )
+            if (layout.top.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    StreamActions(layout.top, uiState, viewModel::handleStreamButton)
+                }
             }
 
             IconButton(
@@ -330,13 +313,13 @@ fun StreamScreen(
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .padding(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 32.dp)
-                .padding(horizontal = if (hasCustomBottomButtons) 12.dp else 24.dp),
+                .padding(horizontal = if (hasBottomButtons) 12.dp else 24.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             // Mute Stream Button
             Box(
-                modifier = if (hasCustomBottomButtons) Modifier.weight(1f) else Modifier,
+                modifier = if (hasBottomButtons) Modifier.weight(1f) else Modifier,
                 contentAlignment = Alignment.Center
             ) {
                 FloatingActionButton(
@@ -357,7 +340,7 @@ fun StreamScreen(
 
             // Call/End Call Button with Pulse Animation
             Box(
-                modifier = if (hasCustomBottomButtons) Modifier.weight(1f) else Modifier,
+                modifier = if (hasBottomButtons) Modifier.weight(1f) else Modifier,
                 contentAlignment = Alignment.Center
             ) {
                 Box(
@@ -391,141 +374,72 @@ fun StreamScreen(
                 }
             }
 
-            StreamActions(
-                buttons = bottomButtons,
-                enabled = isButtonEnabled,
-                onButtonClick = viewModel::handleStreamButton
-            )
-
-            // Quick Reply Button
-            if (layout == null && uiState.quickReplyEntityId.isNotBlank()) {
-                FloatingActionButton(
-                    onClick = { viewModel.openQuickReplySheet() },
-                    modifier = Modifier.size(64.dp),
-                    containerColor = Color.White.copy(alpha = 0.2f),
-                    contentColor = Color.White,
-                    shape = CircleShape,
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "Quick Reply", modifier = Modifier.size(28.dp))
-                }
-            }
-
-            // Door Open Button (configurable entity and service)
-            if (layout == null && uiState.doorEntityId.isNotBlank()) {
-                FloatingActionButton(
-                    onClick = { viewModel.handleDoorAction() },
-                    modifier = Modifier.size(64.dp),
-                    containerColor = Color.White.copy(alpha = 0.2f),
-                    contentColor = Color.White,
-                    shape = CircleShape,
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.LockOpen,
-                        contentDescription = stringResource(R.string.stream_open_door),
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-            }
-
-            // Lock/Unlock Button
-            if (layout == null && uiState.doorEntityId.isBlank() && uiState.lockEntityId.isNotBlank()) {
-                val (lockIcon, lockColor) = when (uiState.lockState) {
-                    LockState.Unlocked -> Icons.Default.LockOpen to Color.Red.copy(alpha = 0.8f)
-                    LockState.Locked -> Icons.Default.Lock to Color.White.copy(alpha = 0.2f)
-                    LockState.Jammed -> Icons.Default.Warning to Color(0xFFFFA500)
-                    LockState.Locking, LockState.Unlocking -> Icons.Default.Sync to Color.Gray.copy(alpha = 0.8f)
-                    else -> Icons.Default.QuestionMark to Color.DarkGray.copy(alpha = 0.8f)
-                }
-
-                val infiniteLockTransition = rememberInfiniteTransition(label = "lock_sync")
-                val syncRotation by infiniteLockTransition.animateFloat(
-                    initialValue = 0f,
-                    targetValue = 360f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(1500, easing = LinearEasing),
-                        repeatMode = RepeatMode.Restart
-                    ),
-                    label = "syncRotation"
-                )
-
-                FloatingActionButton(
-                    onClick = {
-                        viewModel.handleLockAction()
-                    },
-                    modifier = Modifier.size(64.dp),
-                    containerColor = lockColor,
-                    contentColor = Color.White,
-                    shape = CircleShape,
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp)
-                ) {
-                    val isTransitioning = uiState.lockState == LockState.Locking || uiState.lockState == LockState.Unlocking
-                    Icon(
-                        imageVector = lockIcon,
-                        contentDescription = "Lock Status",
-                        modifier = Modifier
-                            .size(28.dp)
-                            .then(if (isTransitioning) Modifier.rotate(syncRotation) else Modifier)
-                    )
-                }
-            }
+            StreamActions(layout.bottom, uiState, viewModel::handleStreamButton)
         }
     }
 
-    if (layout == null && uiState.showQuickReplySheet) {
-        ModalBottomSheet(
-            onDismissRequest = { viewModel.dismissQuickReplySheet() },
-            sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.stream_quick_reply),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 16.dp)
+    uiState.quickReplySheet?.let { sheet ->
+        QuickReplySheet(
+            sheet = sheet,
+            onDismiss = viewModel::dismissQuickReplySheet,
+            onSelect = viewModel::sendQuickReply
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QuickReplySheet(
+    sheet: QuickReplySheetState,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(),
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(
+                text = sheet.button.label,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            when {
+                sheet.error != null -> Text(
+                    text = sheet.error,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(vertical = 16.dp)
                 )
-
-                LaunchedEffect(Unit) {
-                    viewModel.loadQuickReplyOptions()
+                sheet.options == null -> Box(
+                    modifier = Modifier.fillMaxWidth().padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
                 }
-
-                if (uiState.quickReplyError != null) {
-                    Text(
-                        text = uiState.quickReplyError!!,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(vertical = 16.dp)
-                    )
-                } else if (uiState.quickReplyOptions == null) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                } else if (uiState.quickReplyOptions!!.isEmpty()) {
-                    Text("No quick reply options found for this entity.", modifier = Modifier.padding(vertical = 16.dp))
-                } else {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(bottom = 32.dp)
-                    ) {
-                        items(uiState.quickReplyOptions!!) { option ->
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { viewModel.sendQuickReply(option) },
-                                shape = MaterialTheme.shapes.medium,
-                                color = MaterialTheme.colorScheme.surfaceVariant
-                            ) {
-                                Text(
-                                    text = option,
-                                    modifier = Modifier.padding(16.dp),
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
-                            }
+                sheet.options.isEmpty() -> Text(
+                    text = stringResource(R.string.stream_quick_reply_no_options),
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+                else -> LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(bottom = 32.dp)
+                ) {
+                    items(sheet.options) { option ->
+                        Surface(
+                            onClick = { onSelect(option) },
+                            enabled = !sheet.isSending,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                text = option,
+                                modifier = Modifier.padding(16.dp),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
                         }
                     }
                 }
@@ -533,26 +447,10 @@ fun StreamScreen(
         }
     }
 }
-
-@Composable
-private fun StreamActionRow(
-    buttons: List<StreamButton>,
-    enabled: (StreamButton) -> Boolean,
-    onButtonClick: (StreamButton) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        StreamActions(buttons, enabled, onButtonClick)
-    }
-}
-
 @Composable
 private fun RowScope.StreamActions(
     buttons: List<StreamButton>,
-    enabled: (StreamButton) -> Boolean,
+    uiState: StreamUiState,
     onButtonClick: (StreamButton) -> Unit
 ) {
     buttons.forEach { button ->
@@ -563,7 +461,8 @@ private fun RowScope.StreamActions(
             ) {
                 StreamActionButton(
                     button = button,
-                    enabled = enabled(button),
+                    enabled = uiState.canRun(button),
+                    lockState = uiState.lockStates[button.action.entityId] ?: LockState.Unknown,
                     onClick = { onButtonClick(button) }
                 )
             }
@@ -572,28 +471,70 @@ private fun RowScope.StreamActions(
 }
 
 @Composable
-private fun StreamActionButton(button: StreamButton, enabled: Boolean, onClick: () -> Unit) {
+private fun StreamActionButton(
+    button: StreamButton,
+    enabled: Boolean,
+    lockState: LockState,
+    onClick: () -> Unit
+) {
+    val isLock = button.action is StreamButtonAction.DoorLock
     val icon = when (button.action) {
         is StreamButtonAction.Toggle -> Icons.Default.ToggleOn
         is StreamButtonAction.Press -> Icons.Default.TouchApp
         is StreamButtonAction.SelectOption -> Icons.AutoMirrored.Filled.List
         is StreamButtonAction.RunScript -> Icons.Default.PlayArrow
         is StreamButtonAction.TurnOn -> Icons.Default.PowerSettingsNew
+        is StreamButtonAction.QuickReply -> Icons.AutoMirrored.Filled.Chat
+        is StreamButtonAction.OpenDoor -> Icons.Default.LockOpen
+        is StreamButtonAction.DoorLock -> when (lockState) {
+            LockState.Locked -> Icons.Default.Lock
+            LockState.Unlocked -> Icons.Default.LockOpen
+            LockState.Locking, LockState.Unlocking -> Icons.Default.Sync
+            LockState.Jammed -> Icons.Default.Warning
+            LockState.Unknown -> Icons.Default.QuestionMark
+        }
+    }
+    val lockDescription = if (isLock) stringResource(
+        when (lockState) {
+            LockState.Locked -> R.string.stream_lock_locked
+            LockState.Unlocked -> R.string.stream_lock_unlocked
+            LockState.Locking -> R.string.stream_lock_locking
+            LockState.Unlocking -> R.string.stream_lock_unlocking
+            LockState.Jammed -> R.string.stream_lock_jammed
+            LockState.Unknown -> R.string.stream_lock_unknown
+        }
+    ) else null
+    val background = when {
+        isLock && lockState == LockState.Unlocked -> Color.Red.copy(alpha = 0.8f)
+        isLock && lockState == LockState.Jammed -> Color(0xFF875A00)
+        else -> Color.White.copy(alpha = 0.2f)
     }
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.widthIn(max = 88.dp).fillMaxWidth(),
+        modifier = Modifier.widthIn(max = 88.dp).fillMaxWidth().then(
+            if (lockDescription == null) Modifier else Modifier.semantics { stateDescription = lockDescription }
+        ),
         shape = MaterialTheme.shapes.medium,
-        color = Color.White.copy(alpha = 0.2f),
-        contentColor = Color.White.copy(alpha = if (enabled) 1f else 0.5f)
+        color = background,
+        contentColor = Color.White.copy(alpha = if (enabled || isLock) 1f else 0.5f)
     ) {
         Column(
             modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 4.dp, vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+            val rotation = if (isLock && (lockState == LockState.Locking || lockState == LockState.Unlocking)) {
+                val transition = rememberInfiniteTransition(label = "lock")
+                val angle by transition.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 360f,
+                    animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing)),
+                    label = "lock status"
+                )
+                angle
+            } else 0f
+            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp).rotate(rotation))
             Text(
                 text = button.label,
                 style = MaterialTheme.typography.labelSmall,

@@ -2,6 +2,7 @@ package com.novasoftware.hadoorbell.ui.stream
 
 import android.content.Context
 import com.novasoftware.hadoorbell.MainDispatcherRule
+import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.data.repository.SettingsRepositoryImpl
 import com.novasoftware.hadoorbell.domain.repository.HomeAssistantRepository
 import com.novasoftware.hadoorbell.domain.usecase.CallActionUseCase
@@ -69,17 +70,13 @@ class StreamViewModelTest {
             every { haUrlFlow } returns flowOf("https://test.url")
             every { haTokenFlow } returns flowOf("token123")
             every { streamSourceFlow } returns flowOf("camera1")
-            every { quickReplyEntityIdFlow } returns flowOf("input_select.qr")
-            every { lockEntityIdFlow } returns flowOf("lock.front")
             every { instantTwoWayAudioFlow } returns flowOf(false)
             every { webrtcProviderFlow } returns flowOf("webrtc")
-            every { doorEntityIdFlow } returns flowOf("")
-            every { doorServiceFlow } returns flowOf("")
             every { answerActionServiceFlow } returns flowOf("")
             every { answerActionEntityIdFlow } returns flowOf("")
             every { hangupActionServiceFlow } returns flowOf("")
             every { hangupActionEntityIdFlow } returns flowOf("")
-            every { streamButtonLayoutFlow } returns flowOf(null)
+            every { streamButtonLayoutFlow } returns flowOf(StreamButtonLayout())
         }
         
         repository = mockk(relaxed = true) {
@@ -121,16 +118,13 @@ class StreamViewModelTest {
         advanceUntilIdle()
 
         val uiState = viewModel.uiState.value
-        assertEquals("input_select.qr", uiState.quickReplyEntityId)
-        assertEquals("lock.front", uiState.lockEntityId)
-        assertEquals(LockState.Locked, uiState.lockState)
+        assertEquals(StreamButtonLayout(), uiState.streamButtonLayout)
+        assertEquals(webRtcManager, uiState.webRtcManager)
         assertFalse(uiState.isMicEnabled) // instantTwoWayAudio is false
     }
 
     @Test
-    fun `initializeConnection loads door and call action settings`() = runTest {
-        every { appPreferences.doorEntityIdFlow } returns flowOf("switch.door_relay")
-        every { appPreferences.doorServiceFlow } returns flowOf("switch.turn_on")
+    fun `initializeConnection loads call action settings`() = runTest {
         every { appPreferences.answerActionServiceFlow } returns flowOf("switch.turn_on")
         every { appPreferences.answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
         every { appPreferences.hangupActionServiceFlow } returns flowOf("switch.turn_off")
@@ -140,8 +134,6 @@ class StreamViewModelTest {
         advanceUntilIdle()
 
         val uiState = viewModel.uiState.value
-        assertEquals("switch.door_relay", uiState.doorEntityId)
-        assertEquals("switch.turn_on", uiState.doorService)
         assertEquals("switch.turn_on", uiState.answerActionService)
         assertEquals("switch.doorbell_talk", uiState.answerActionEntityId)
         assertEquals("switch.turn_off", uiState.hangupActionService)
@@ -149,28 +141,30 @@ class StreamViewModelTest {
     }
 
     @Test
-    fun `returning to the stream uses the enabled layout and skips legacy lock lookup`() = runTest {
-        val button = StreamButton("light", "Porch light", StreamButtonAction.Toggle("light.porch"))
-        val layout = StreamButtonLayout(top = listOf(button))
-        every { appPreferences.streamButtonLayoutFlow } returns flowOf(layout.copy(enabled = false))
+    fun `returning to the stream loads the new layout and enables instant audio once Quick Reply is removed`() = runTest {
+        val lock = StreamButton("lock", "Front door", StreamButtonAction.DoorLock("lock.front"))
+        val reply = StreamButton("reply", "Front reply", StreamButtonAction.QuickReply("select.front_reply"))
+        val original = StreamButtonLayout(bottom = listOf(lock, reply))
+        val revised = StreamButtonLayout(top = listOf(lock))
+        every { appPreferences.streamButtonLayoutFlow } returns flowOf(original)
         every { appPreferences.instantTwoWayAudioFlow } returns flowOf(true)
 
         viewModel.initializeConnection(context)
         advanceUntilIdle()
 
-        assertEquals(null, viewModel.uiState.value.streamButtonLayout)
-        assertEquals(LockState.Locked, viewModel.uiState.value.lockState)
+        assertEquals(original, viewModel.uiState.value.streamButtonLayout)
+        assertEquals(LockState.Locked, viewModel.uiState.value.lockStates["lock.front"])
         assertFalse(viewModel.uiState.value.isMicEnabled)
         viewModel.teardownConnection()
         advanceUntilIdle()
 
-        every { appPreferences.streamButtonLayoutFlow } returns flowOf(layout)
+        every { appPreferences.streamButtonLayoutFlow } returns flowOf(revised)
         viewModel.initializeConnection(context)
         advanceUntilIdle()
 
-        assertEquals(layout, viewModel.uiState.value.streamButtonLayout)
+        assertEquals(revised, viewModel.uiState.value.streamButtonLayout)
         assertTrue(viewModel.uiState.value.isMicEnabled)
-        coVerify(exactly = 1) { repository.getEntityState("lock.front") }
+        coVerify(exactly = 2) { repository.getEntityState("lock.front") }
     }
 
     @Test
@@ -225,14 +219,31 @@ class StreamViewModelTest {
     }
 
     @Test
-    fun `quick reply sheet toggling updates state`() = runTest {
-        assertFalse(viewModel.uiState.value.showQuickReplySheet)
-        
-        viewModel.openQuickReplySheet()
-        assertTrue(viewModel.uiState.value.showQuickReplySheet)
-        
+    fun `two quick reply buttons load and send options for their own entities`() = runTest {
+        val front = StreamButton("front", "Front reply", StreamButtonAction.QuickReply("select.front"))
+        val side = StreamButton("side", "Side reply", StreamButtonAction.QuickReply("input_select.side"))
+        every { appPreferences.streamButtonLayoutFlow } returns
+            flowOf(StreamButtonLayout(top = listOf(front), bottom = listOf(side)))
+        coEvery { getSelectOptionsUseCase("select.front") } returns Result.success(listOf("Hello"))
+        coEvery { getSelectOptionsUseCase("input_select.side") } returns Result.success(listOf("Wait here"))
+        coEvery { sendQuickReplyUseCase("input_select.side", "Wait here") } returns Result.success(Unit)
+        viewModel.initializeConnection(context)
+
+        viewModel.handleStreamButton(front)
+        advanceUntilIdle()
+        assertEquals(QuickReplySheetState(front, listOf("Hello")), viewModel.uiState.value.quickReplySheet)
         viewModel.dismissQuickReplySheet()
-        assertFalse(viewModel.uiState.value.showQuickReplySheet)
+
+        viewModel.handleStreamButton(side)
+        advanceUntilIdle()
+        assertEquals(QuickReplySheetState(side, listOf("Wait here")), viewModel.uiState.value.quickReplySheet)
+        viewModel.sendQuickReply("Hello")
+        viewModel.sendQuickReply("Wait here")
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { sendQuickReplyUseCase("input_select.side", "Wait here") }
+        coVerify(exactly = 0) { sendQuickReplyUseCase("select.front", any()) }
+        assertEquals(null, viewModel.uiState.value.quickReplySheet)
     }
 
     @Test
@@ -454,39 +465,83 @@ class StreamViewModelTest {
 
     @Test
     fun `door action requests biometric authentication before opening`() = runTest {
-        every { appPreferences.doorEntityIdFlow } returns flowOf("switch.door_relay")
-
-        val events = mutableListOf<UiEvent>()
-        val collector = launch(UnconfinedTestDispatcher(testScheduler)) {
-            viewModel.uiEvent.collect { events.add(it) }
+        val door = StreamButton("door", "Side door", StreamButtonAction.OpenDoor("switch.door_relay", "switch.turn_on"))
+        every { appPreferences.streamButtonLayoutFlow } returns flowOf(StreamButtonLayout(bottom = listOf(door)))
+        coEvery { openDoorUseCase("switch.door_relay", "switch.turn_on") } returns Result.success(Unit)
+        val requests = mutableListOf<UiEvent.AuthenticateStreamButton>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiEvent.collect { if (it is UiEvent.AuthenticateStreamButton) requests.add(it) }
         }
 
         viewModel.initializeConnection(context)
         advanceUntilIdle()
-        viewModel.handleDoorAction()
+        viewModel.handleStreamButton(door)
         advanceUntilIdle()
-        collector.cancel()
 
-        assertTrue(events.any { it is UiEvent.RequestBiometricAuth && it.forDoor })
         coVerify(exactly = 0) { openDoorUseCase(any(), any()) }
+        assertEquals(door, requests.single().button)
+
+        viewModel.onStreamButtonAuthentication(requests.single(), true)
+        advanceUntilIdle()
+        coVerify(exactly = 1) { openDoorUseCase("switch.door_relay", "switch.turn_on") }
     }
 
     @Test
-    fun `open door failures are reported to the user`() = runTest {
-        every { appPreferences.doorEntityIdFlow } returns flowOf("switch.door_relay")
-        coEvery { openDoorUseCase(any(), any()) } returns Result.failure(RuntimeException("relay offline"))
+    fun `lock buttons show each entity state and authenticate unlocking only`() = runTest {
+        val front = StreamButton("front", "Front lock", StreamButtonAction.DoorLock("lock.front"))
+        val side = StreamButton("side", "Side lock", StreamButtonAction.DoorLock("lock.side"), true)
+        every { appPreferences.streamButtonLayoutFlow } returns
+            flowOf(StreamButtonLayout(top = listOf(front), bottom = listOf(side)))
+        coEvery { repository.getEntityState("lock.side") } returns Result.success("unlocked")
+        every { lockDoorUseCase("lock.side") } returns flowOf(Result.success(LockState.Locked))
+        every { unlockDoorUseCase("lock.front") } returns flowOf(Result.success(LockState.Unlocked))
+        val requests = mutableListOf<UiEvent.AuthenticateStreamButton>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiEvent.collect { if (it is UiEvent.AuthenticateStreamButton) requests.add(it) }
+        }
 
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+        assertEquals(
+            mapOf("lock.front" to LockState.Locked, "lock.side" to LockState.Unlocked),
+            viewModel.uiState.value.lockStates
+        )
+
+        viewModel.handleStreamButton(side)
+        viewModel.handleStreamButton(front)
+        advanceUntilIdle()
+        verify(exactly = 1) { lockDoorUseCase("lock.side") }
+        verify(exactly = 0) { unlockDoorUseCase(any()) }
+        assertEquals(front, requests.single().button)
+
+        viewModel.onStreamButtonAuthentication(requests.single(), true)
+        advanceUntilIdle()
+        verify(exactly = 1) { unlockDoorUseCase("lock.front") }
+        assertEquals(
+            mapOf("lock.front" to LockState.Unlocked, "lock.side" to LockState.Locked),
+            viewModel.uiState.value.lockStates
+        )
+    }
+
+    @Test
+    fun `open door failures are reported using the configured label`() = runTest {
+        val door = StreamButton("door", "Side door", StreamButtonAction.OpenDoor("switch.door_relay"))
+        every { appPreferences.streamButtonLayoutFlow } returns flowOf(StreamButtonLayout(bottom = listOf(door)))
+        coEvery { openDoorUseCase("switch.door_relay", "") } returns Result.failure(RuntimeException("relay offline"))
+        every { context.getString(R.string.stream_button_failed, "Side door", "relay offline") } returns
+            "Side door failed: relay offline"
         val events = mutableListOf<UiEvent>()
-        val collector = launch(UnconfinedTestDispatcher(testScheduler)) {
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.uiEvent.collect { events.add(it) }
         }
 
         viewModel.initializeConnection(context)
         advanceUntilIdle()
-        viewModel.executeOpenDoor()
+        viewModel.handleStreamButton(door)
+        val request = events.filterIsInstance<UiEvent.AuthenticateStreamButton>().single()
+        viewModel.onStreamButtonAuthentication(request, true)
         advanceUntilIdle()
-        collector.cancel()
 
-        assertTrue(events.any { it is UiEvent.ShowToast && it.message.contains("Open door failed") })
+        assertTrue(events.contains(UiEvent.ShowToast("Side door failed: relay offline", long = true)))
     }
 }

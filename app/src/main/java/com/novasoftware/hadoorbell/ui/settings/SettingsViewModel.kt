@@ -51,12 +51,8 @@ class SettingsViewModel @Inject constructor(
                     url = settings.url,
                     token = settings.token,
                     streamSource = settings.streamSource,
-                    quickReplyEntityId = settings.quickReplyEntityId,
-                    lockEntityId = settings.lockEntityId,
-                    instantTwoWayAudio = settings.instantTwoWayAudio,
+                    instantTwoWayAudio = settings.instantTwoWayAudio && !settings.streamButtonLayout.hasQuickReply,
                     webrtcProvider = settings.webrtcProvider,
-                    doorEntityId = settings.doorEntityId,
-                    doorService = settings.doorService,
                     answerActionService = settings.answerActionService,
                     answerActionEntityId = settings.answerActionEntityId,
                     hangupActionService = settings.hangupActionService,
@@ -144,36 +140,31 @@ class SettingsViewModel @Inject constructor(
     private fun HttpUrl.origin(): String = newBuilder().username("").password("")
         .encodedPath("/").query(null).fragment(null).build().toString()
 
-    fun setCustomButtonsEnabled(enabled: Boolean) {
-        _uiState.update {
-            val layout = it.streamButtonLayout
-            it.copy(streamButtonLayout = layout?.copy(enabled = enabled)
-                ?: StreamButtonLayout().takeIf { enabled })
-        }
-    }
-
     fun updateStreamButtonLayout(layout: StreamButtonLayout) {
-        _uiState.update { it.copy(streamButtonLayout = layout) }
-    }
-
-    fun updateStreamSource(value: String) { _uiState.update { it.copy(streamSource = value) } }
-    fun updateQuickReplyEntityId(value: String) {
-        _uiState.update { 
+        _uiState.update {
             it.copy(
-                quickReplyEntityId = value,
-                instantTwoWayAudio = if (value.isNotBlank()) false else it.instantTwoWayAudio
+                streamButtonLayout = layout,
+                instantTwoWayAudio = it.instantTwoWayAudio && !layout.hasQuickReply
             )
         }
     }
-    fun updateLockEntityId(value: String) { _uiState.update { it.copy(lockEntityId = value) } }
-    fun updateInstantTwoWayAudio(value: Boolean) { _uiState.update { it.copy(instantTwoWayAudio = value) } }
+
+    fun updateStreamSource(value: String) { _uiState.update { it.copy(streamSource = value) } }
+    fun updateInstantTwoWayAudio(value: Boolean) {
+        _uiState.update { it.copy(instantTwoWayAudio = value && !it.streamButtonLayout.hasQuickReply) }
+    }
     fun updateWebrtcProvider(value: String) { _uiState.update { it.copy(webrtcProvider = value) } }
-    fun updateDoorEntityId(value: String) { _uiState.update { it.copy(doorEntityId = value) } }
-    fun updateDoorService(value: String) { _uiState.update { it.copy(doorService = value) } }
-    fun updateAnswerActionService(value: String) { _uiState.update { it.copy(answerActionService = value) } }
-    fun updateAnswerActionEntityId(value: String) { _uiState.update { it.copy(answerActionEntityId = value) } }
-    fun updateHangupActionService(value: String) { _uiState.update { it.copy(hangupActionService = value) } }
-    fun updateHangupActionEntityId(value: String) { _uiState.update { it.copy(hangupActionEntityId = value) } }
+
+    fun updateCallActions(answerService: String, answerEntity: String, hangupService: String, hangupEntity: String) {
+        _uiState.update {
+            it.copy(
+                answerActionService = answerService.trim(),
+                answerActionEntityId = answerEntity.trim(),
+                hangupActionService = hangupService.trim(),
+                hangupActionEntityId = hangupEntity.trim()
+            )
+        }
+    }
 
     fun callActionsChanged(): Boolean {
         val currentState = _uiState.value
@@ -184,16 +175,13 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun protectedButtonsChanged(): Boolean {
-        val original = savedSettings.streamButtonLayout.buttons()
-        val current = _uiState.value.streamButtonLayout.buttons()
+        val original = savedSettings.streamButtonLayout.buttons
+        val current = _uiState.value.streamButtonLayout.buttons
         return original.filter(StreamButton::requiresAuthentication).any { saved ->
             current.none { it.id == saved.id && it.action == saved.action && it.requiresAuthentication } ||
                 current.any { it.action == saved.action && !it.requiresAuthentication && it !in original }
         }
     }
-
-    private fun StreamButtonLayout?.buttons(): List<StreamButton> =
-        if (this == null) emptyList() else top + bottom
 
     fun saveSettings(onComplete: () -> Unit) {
         viewModelScope.launch {
@@ -202,12 +190,8 @@ class SettingsViewModel @Inject constructor(
                 url = currentState.url,
                 token = currentState.token,
                 streamSource = currentState.streamSource,
-                quickReplyEntityId = currentState.quickReplyEntityId,
-                lockEntityId = currentState.lockEntityId,
                 instantTwoWayAudio = currentState.instantTwoWayAudio,
                 webrtcProvider = currentState.webrtcProvider,
-                doorEntityId = currentState.doorEntityId,
-                doorService = currentState.doorService,
                 answerActionService = currentState.answerActionService,
                 answerActionEntityId = currentState.answerActionEntityId,
                 hangupActionService = currentState.hangupActionService,

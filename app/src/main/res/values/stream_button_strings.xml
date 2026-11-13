@@ -3,4 +3,12 @@
     <string name="stream_button_auth_subtitle">Authenticate to run this action</string>
     <string name="stream_button_unknown_error">Unknown error</string>
     <string name="stream_button_failed">%1$s failed: %2$s</string>
+    <string name="stream_quick_reply_no_options">No quick reply options found for this entity.</string>
+    <string name="stream_quick_reply_sent">Sent: %1$s</string>
+    <string name="stream_lock_locked">Locked</string>
+    <string name="stream_lock_unlocked">Unlocked</string>
+    <string name="stream_lock_locking">Locking</string>
+    <string name="stream_lock_unlocking">Unlocking</string>
+    <string name="stream_lock_jammed">Jammed</string>
+    <string name="stream_lock_unknown">Lock status unknown</string>
 </resources>

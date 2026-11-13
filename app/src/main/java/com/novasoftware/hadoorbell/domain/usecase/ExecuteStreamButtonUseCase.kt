@@ -28,6 +28,8 @@ class ExecuteStreamButtonUseCase @Inject constructor(
         is StreamButtonAction.TurnOn -> callEntityService(
             action.entityId, StreamButtonAction.TURN_ON_DOMAINS, "turn_on"
         )
+        is StreamButtonAction.QuickReply, is StreamButtonAction.DoorLock, is StreamButtonAction.OpenDoor ->
+            Result.failure(IllegalArgumentException("This stream button requires its dedicated action handler"))
     }
 
     private suspend fun callEntityService(

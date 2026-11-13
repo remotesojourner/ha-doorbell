@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -71,6 +72,7 @@ fun SettingsScreen(
         context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
     }
     var invalidTokenQr by rememberSaveable { mutableStateOf(false) }
+    var showCallSettings by rememberSaveable { mutableStateOf(false) }
     val tokenScanPrompt = stringResource(R.string.settings_token_scan_prompt)
     val scanToken = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { invalidTokenQr = !viewModel.importTokenFromQr(it) }
@@ -276,7 +278,7 @@ fun SettingsScreen(
                 }
             }
 
-            // Intercom & Features Card
+            // Stream Buttons Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -291,125 +293,20 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        stringResource(R.string.settings_integrations_optional),
+                        stringResource(R.string.settings_stream_buttons),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold
                     )
                     
-                    val customLayout = uiState.streamButtonLayout?.takeIf { it.enabled }
-                    val instantAudioAvailable =
-                        customLayout != null || uiState.quickReplyEntityId.isBlank()
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            stringResource(R.string.settings_instant_2way),
-                            modifier = Modifier.weight(1f).padding(end = 12.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (instantAudioAvailable) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                        Switch(
-                            checked = uiState.instantTwoWayAudio && instantAudioAvailable,
-                            onCheckedChange = { viewModel.updateInstantTwoWayAudio(it) },
-                            enabled = instantAudioAvailable,
-                            modifier = Modifier.testTag("instant_2way_switch")
-                        )
-                    }
-
-                    val customButtonsLabel = stringResource(R.string.settings_use_custom_buttons)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            customButtonsLabel,
-                            modifier = Modifier.weight(1f).padding(end = 12.dp),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Switch(
-                            checked = customLayout != null,
-                            onCheckedChange = viewModel::setCustomButtonsEnabled,
-                            modifier = Modifier
-                                .testTag("custom_buttons_switch")
-                                .semantics { contentDescription = customButtonsLabel }
-                        )
-                    }
-                    if (customLayout != null) {
-                        StreamButtonEditor(
-                            layout = customLayout,
-                            entities = uiState.entities,
-                            isLoadingEntities = uiState.isLoadingEntities,
-                            entityLoadError = entityLoadError,
-                            onLoadEntities = viewModel::loadEntities,
-                            onLayoutChange = viewModel::updateStreamButtonLayout
-                        )
-                    } else {
-                        LegacyStreamControls(
-                            state = uiState,
-                            entityLoadError = entityLoadError,
-                            viewModel = viewModel
-                        )
-                    }
-
-                    Text(
-                        stringResource(R.string.settings_call_actions),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    Text(
-                        stringResource(R.string.settings_call_actions_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    OutlinedTextField(
-                        value = uiState.answerActionService,
-                        onValueChange = { viewModel.updateAnswerActionService(it) },
-                        label = { Text(stringResource(R.string.settings_answer_action)) },
-                        placeholder = { Text("switch.turn_on") },
-                        modifier = Modifier.fillMaxWidth().testTag("answer_action_service_input"),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
-                    )
-
-                    EntityTargetField(
-                        value = uiState.answerActionEntityId,
-                        onValueChange = viewModel::updateAnswerActionEntityId,
-                        label = stringResource(R.string.settings_answer_entity),
-                        placeholder = "switch.doorbell_talk",
+                    StreamButtonEditor(
+                        layout = uiState.streamButtonLayout,
                         entities = uiState.entities,
-                        isLoading = uiState.isLoadingEntities,
-                        loadError = entityLoadError,
-                        onLoad = viewModel::loadEntities,
-                        modifier = Modifier.testTag("answer_action_entity_input")
-                    )
-
-                    OutlinedTextField(
-                        value = uiState.hangupActionService,
-                        onValueChange = { viewModel.updateHangupActionService(it) },
-                        label = { Text(stringResource(R.string.settings_hangup_action)) },
-                        placeholder = { Text("switch.turn_off") },
-                        modifier = Modifier.fillMaxWidth().testTag("hangup_action_service_input"),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
-                    )
-
-                    EntityTargetField(
-                        value = uiState.hangupActionEntityId,
-                        onValueChange = viewModel::updateHangupActionEntityId,
-                        label = stringResource(R.string.settings_hangup_entity),
-                        placeholder = "switch.doorbell_talk",
-                        entities = uiState.entities,
-                        isLoading = uiState.isLoadingEntities,
-                        loadError = entityLoadError,
-                        onLoad = viewModel::loadEntities,
-                        modifier = Modifier.testTag("hangup_action_entity_input")
+                        isLoadingEntities = uiState.isLoadingEntities,
+                        entityLoadError = entityLoadError,
+                        onLoadEntities = viewModel::loadEntities,
+                        onLayoutChange = viewModel::updateStreamButtonLayout,
+                        onEditCall = { showCallSettings = true }
                     )
                 }
             }
@@ -418,70 +315,118 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(80.dp))
         }
     }
+
+    if (showCallSettings) {
+        CallSettingsDialog(
+            state = uiState,
+            entityLoadError = entityLoadError,
+            viewModel = viewModel,
+            onDismiss = { showCallSettings = false }
+        )
+    }
 }
 
 @Composable
-private fun LegacyStreamControls(
+private fun CallSettingsDialog(
     state: SettingsUiState,
     entityLoadError: String?,
-    viewModel: SettingsViewModel
+    viewModel: SettingsViewModel,
+    onDismiss: () -> Unit
 ) {
-    EntityTargetField(
-        value = state.quickReplyEntityId,
-        onValueChange = viewModel::updateQuickReplyEntityId,
-        label = stringResource(R.string.settings_quick_reply_id),
-        placeholder = "select.doorbell_quick_reply",
-        entities = state.entities.filter { it.domain == "select" || it.domain == "input_select" },
-        isLoading = state.isLoadingEntities,
-        loadError = entityLoadError,
-        onLoad = viewModel::loadEntities
-    )
+    var answerService by rememberSaveable { mutableStateOf(state.answerActionService) }
+    var answerEntity by rememberSaveable { mutableStateOf(state.answerActionEntityId) }
+    var hangupService by rememberSaveable { mutableStateOf(state.hangupActionService) }
+    var hangupEntity by rememberSaveable { mutableStateOf(state.hangupActionEntityId) }
+    var instantAudio by rememberSaveable { mutableStateOf(state.instantTwoWayAudio) }
+    val instantAudioAvailable = !state.streamButtonLayout.hasQuickReply
+    val instantAudioLabel = stringResource(R.string.settings_instant_2way)
 
-    EntityTargetField(
-        value = state.lockEntityId,
-        onValueChange = viewModel::updateLockEntityId,
-        label = stringResource(R.string.settings_door_lock_id),
-        placeholder = "lock.front_door",
-        entities = state.entities.filter { it.domain == "lock" },
-        isLoading = state.isLoadingEntities,
-        loadError = entityLoadError,
-        onLoad = viewModel::loadEntities
-    )
-
-    Text(
-        stringResource(R.string.settings_door_open),
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.SemiBold
-    )
-    Text(
-        stringResource(R.string.settings_door_open_desc),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    EntityTargetField(
-        value = state.doorEntityId,
-        onValueChange = viewModel::updateDoorEntityId,
-        label = stringResource(R.string.settings_door_entity),
-        placeholder = "switch.door_relay",
-        entities = state.entities,
-        isLoading = state.isLoadingEntities,
-        loadError = entityLoadError,
-        onLoad = viewModel::loadEntities,
-        modifier = Modifier.testTag("door_entity_input")
-    )
-    OutlinedTextField(
-        value = state.doorService,
-        onValueChange = viewModel::updateDoorService,
-        label = { Text(stringResource(R.string.settings_door_service)) },
-        placeholder = { Text("switch.turn_on") },
-        modifier = Modifier.fillMaxWidth().testTag("door_service_input"),
-        shape = RoundedCornerShape(12.dp),
-        singleLine = true
-    )
-    Text(
-        stringResource(R.string.settings_door_service_desc),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_call_actions)) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        instantAudioLabel,
+                        modifier = Modifier.weight(1f).padding(end = 12.dp)
+                    )
+                    Switch(
+                        checked = instantAudio && instantAudioAvailable,
+                        onCheckedChange = { instantAudio = it },
+                        enabled = instantAudioAvailable,
+                        modifier = Modifier.testTag("instant_2way_switch")
+                            .semantics { contentDescription = instantAudioLabel }
+                    )
+                }
+                if (!instantAudioAvailable) {
+                    Text(
+                        stringResource(R.string.settings_instant_audio_quick_reply),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Text(
+                    stringResource(R.string.settings_call_actions_desc),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                OutlinedTextField(
+                    value = answerService,
+                    onValueChange = { answerService = it },
+                    label = { Text(stringResource(R.string.settings_answer_action)) },
+                    placeholder = { Text("switch.turn_on") },
+                    modifier = Modifier.fillMaxWidth().testTag("answer_action_service_input"),
+                    singleLine = true
+                )
+                EntityTargetField(
+                    value = answerEntity,
+                    onValueChange = { answerEntity = it },
+                    label = stringResource(R.string.settings_answer_entity),
+                    placeholder = "switch.doorbell_talk",
+                    entities = state.entities,
+                    isLoading = state.isLoadingEntities,
+                    loadError = entityLoadError,
+                    onLoad = viewModel::loadEntities,
+                    modifier = Modifier.testTag("answer_action_entity_input")
+                )
+                OutlinedTextField(
+                    value = hangupService,
+                    onValueChange = { hangupService = it },
+                    label = { Text(stringResource(R.string.settings_hangup_action)) },
+                    placeholder = { Text("switch.turn_off") },
+                    modifier = Modifier.fillMaxWidth().testTag("hangup_action_service_input"),
+                    singleLine = true
+                )
+                EntityTargetField(
+                    value = hangupEntity,
+                    onValueChange = { hangupEntity = it },
+                    label = stringResource(R.string.settings_hangup_entity),
+                    placeholder = "switch.doorbell_talk",
+                    entities = state.entities,
+                    isLoading = state.isLoadingEntities,
+                    loadError = entityLoadError,
+                    onLoad = viewModel::loadEntities,
+                    modifier = Modifier.testTag("hangup_action_entity_input")
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                viewModel.updateCallActions(answerService, answerEntity, hangupService, hangupEntity)
+                viewModel.updateInstantTwoWayAudio(instantAudio)
+                onDismiss()
+            }) {
+                Text(stringResource(R.string.settings_call_done))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
+        }
     )
 }
 

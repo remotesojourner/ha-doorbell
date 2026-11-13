@@ -9,14 +9,16 @@ data class StreamButton(
 
 data class StreamButtonLayout(
     val top: List<StreamButton> = emptyList(),
-    val bottom: List<StreamButton> = emptyList(),
-    val enabled: Boolean = true
+    val bottom: List<StreamButton> = emptyList()
 ) {
+    val buttons: List<StreamButton> get() = top + bottom
+    val hasQuickReply: Boolean get() = buttons.any { it.action is StreamButtonAction.QuickReply }
+
     init {
         require(top.size <= MAX_BUTTONS_PER_ROW && bottom.size <= MAX_BUTTONS_PER_ROW) {
             "Each row can contain at most $MAX_BUTTONS_PER_ROW buttons"
         }
-        val ids = (top + bottom).map(StreamButton::id)
+        val ids = buttons.map(StreamButton::id)
         require(ids.none(String::isBlank) && ids.size == ids.toSet().size) {
             "Stream button IDs must be nonblank and unique"
         }
@@ -28,11 +30,16 @@ data class StreamButtonLayout(
 }
 
 sealed interface StreamButtonAction {
-    data class Toggle(val entityId: String) : StreamButtonAction
-    data class Press(val entityId: String) : StreamButtonAction
-    data class SelectOption(val entityId: String, val option: String) : StreamButtonAction
-    data class RunScript(val entityId: String) : StreamButtonAction
-    data class TurnOn(val entityId: String) : StreamButtonAction
+    val entityId: String
+
+    data class Toggle(override val entityId: String) : StreamButtonAction
+    data class Press(override val entityId: String) : StreamButtonAction
+    data class SelectOption(override val entityId: String, val option: String) : StreamButtonAction
+    data class RunScript(override val entityId: String) : StreamButtonAction
+    data class TurnOn(override val entityId: String) : StreamButtonAction
+    data class QuickReply(override val entityId: String) : StreamButtonAction
+    data class DoorLock(override val entityId: String) : StreamButtonAction
+    data class OpenDoor(override val entityId: String, val service: String = "") : StreamButtonAction
 
     companion object {
         val TOGGLE_DOMAINS = setOf(
@@ -43,5 +50,6 @@ sealed interface StreamButtonAction {
         val SELECT_DOMAINS = setOf("select", "input_select")
         val TURN_ON_DOMAINS = setOf("switch", "input_boolean")
         val SCRIPT_DOMAINS = setOf("script")
+        val LOCK_DOMAINS = setOf("lock")
     }
 }

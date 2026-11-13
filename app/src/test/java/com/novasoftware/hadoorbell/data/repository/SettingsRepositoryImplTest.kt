@@ -9,7 +9,6 @@ import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,19 +33,15 @@ class SettingsRepositoryImplTest {
         val url = "  192.168.1.100:8123/  "
         val token = " my_token "
         val source = " camera_1 "
-        val quickReply = " select.doorbell "
-        val lock = " lock.front "
         val instantTwoWayAudio = true
 
         // When
-        appPreferences.saveSettings(url, token, source, quickReply, lock, instantTwoWayAudio)
+        appPreferences.saveSettings(url, token, source, instantTwoWayAudio)
 
         // Then
         assertEquals("https://192.168.1.100:8123", appPreferences.haUrlFlow.first())
         assertEquals("my_token", appPreferences.haTokenFlow.first())
         assertEquals("camera_1", appPreferences.streamSourceFlow.first())
-        assertEquals("select.doorbell", appPreferences.quickReplyEntityIdFlow.first())
-        assertEquals("lock.front", appPreferences.lockEntityIdFlow.first())
         assertEquals(true, appPreferences.instantTwoWayAudioFlow.first())
     }
 
@@ -56,32 +51,26 @@ class SettingsRepositoryImplTest {
         val url = "http://192.168.1.100:8123"
 
         // When
-        appPreferences.saveSettings(url, "", "", "", "", false)
+        appPreferences.saveSettings(url, "", "")
 
         // Then
         assertEquals("https://192.168.1.100:8123", appPreferences.haUrlFlow.first())
     }
 
     @Test
-    fun `saveSettings stores door and call actions`() = runTest {
+    fun `saveSettings stores call actions`() = runTest {
         appPreferences.saveSettings(
             url = "https://home.local",
             token = "token",
             source = "camera",
-            quickReplyEntityId = "",
-            lockEntityId = "",
             instantTwoWayAudio = false,
             provider = "frigate",
-            doorEntityId = " switch.door_relay ",
-            doorService = " switch.turn_on ",
             answerActionService = " switch.turn_on ",
             answerActionEntityId = " switch.doorbell_talk ",
             hangupActionService = " switch.turn_off ",
             hangupActionEntityId = " switch.doorbell_talk "
         )
 
-        assertEquals("switch.door_relay", appPreferences.doorEntityIdFlow.first())
-        assertEquals("switch.turn_on", appPreferences.doorServiceFlow.first())
         assertEquals("switch.turn_on", appPreferences.answerActionServiceFlow.first())
         assertEquals("switch.doorbell_talk", appPreferences.answerActionEntityIdFlow.first())
         assertEquals("switch.turn_off", appPreferences.hangupActionServiceFlow.first())
@@ -89,18 +78,12 @@ class SettingsRepositoryImplTest {
     }
 
     @Test
-    fun `settings saved before the door and call actions existed keep empty defaults`() = runTest {
-        appPreferences.saveSettings("https://home.local", "token", "camera", "", "lock.front", false)
-
-        assertEquals("", appPreferences.doorEntityIdFlow.first())
-        assertEquals("", appPreferences.doorServiceFlow.first())
-        assertEquals("", appPreferences.answerActionServiceFlow.first())
-        assertEquals("", appPreferences.hangupActionServiceFlow.first())
-        assertNull(appPreferences.streamButtonLayoutFlow.first())
+    fun `settings without a saved layout start with empty rows`() = runTest {
+        assertEquals(StreamButtonLayout(), appPreferences.streamButtonLayoutFlow.first())
     }
 
     @Test
-    fun `custom layouts preserve order and protected actions while disabled`() = runTest {
+    fun `saved layouts preserve row order and protected actions`() = runTest {
         val unlock = StreamButton(
             "unlock", "Unlock", StreamButtonAction.TurnOn("switch.door_relay"),
             requiresAuthentication = true
@@ -109,25 +92,25 @@ class SettingsRepositoryImplTest {
         val reply = StreamButton(
             "reply", "Leave at door", StreamButtonAction.SelectOption("select.reply", "Leave at door")
         )
-        val layout = StreamButtonLayout(top = listOf(light, unlock), bottom = listOf(reply), enabled = false)
+        val layout = StreamButtonLayout(top = listOf(light, unlock), bottom = listOf(reply))
 
         appPreferences.saveSettings(
-            "https://home.local", "token", "camera", "", "lock.front", false,
+            "https://home.local", "token", "camera",
             streamButtonLayout = layout
         )
 
         assertEquals(layout, appPreferences.streamButtonLayoutFlow.first())
-        assertEquals("lock.front", appPreferences.lockEntityIdFlow.first())
     }
 
     @Test
-    fun `an explicitly empty custom layout does not fall back to original controls`() = runTest {
-        val layout = StreamButtonLayout()
+    fun `deleting all buttons persists empty rows`() = runTest {
+        val button = StreamButton("chime", "Chime", StreamButtonAction.Press("button.chime"))
         appPreferences.saveSettings(
-            "https://home.local", "token", "camera", "", "lock.front", false,
-            streamButtonLayout = layout
+            "https://home.local", "token", "camera",
+            streamButtonLayout = StreamButtonLayout(bottom = listOf(button))
         )
+        appPreferences.saveSettings("https://home.local", "token", "camera", streamButtonLayout = StreamButtonLayout())
 
-        assertEquals(layout, appPreferences.streamButtonLayoutFlow.first())
+        assertEquals(StreamButtonLayout(), appPreferences.streamButtonLayoutFlow.first())
     }
 }

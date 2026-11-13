@@ -15,12 +15,8 @@ class GetSettingsUseCase @Inject constructor(
             repository.haUrlFlow,
             repository.haTokenFlow,
             repository.streamSourceFlow,
-            repository.quickReplyEntityIdFlow,
-            repository.lockEntityIdFlow,
             repository.instantTwoWayAudioFlow,
             repository.webrtcProviderFlow,
-            repository.doorEntityIdFlow,
-            repository.doorServiceFlow,
             repository.answerActionServiceFlow,
             repository.answerActionEntityIdFlow,
             repository.hangupActionServiceFlow,
@@ -31,17 +27,13 @@ class GetSettingsUseCase @Inject constructor(
                 url = args[0] as? String ?: "",
                 token = args[1] as? String ?: "",
                 streamSource = args[2] as? String ?: "",
-                quickReplyEntityId = args[3] as? String ?: "",
-                lockEntityId = args[4] as? String ?: "",
-                instantTwoWayAudio = args[5] as? Boolean ?: false,
-                webrtcProvider = args[6] as? String ?: "frigate",
-                doorEntityId = args[7] as? String ?: "",
-                doorService = args[8] as? String ?: "",
-                answerActionService = args[9] as? String ?: "",
-                answerActionEntityId = args[10] as? String ?: "",
-                hangupActionService = args[11] as? String ?: "",
-                hangupActionEntityId = args[12] as? String ?: "",
-                streamButtonLayout = args[13] as? StreamButtonLayout
+                instantTwoWayAudio = args[3] as? Boolean ?: false,
+                webrtcProvider = args[4] as? String ?: "frigate",
+                answerActionService = args[5] as? String ?: "",
+                answerActionEntityId = args[6] as? String ?: "",
+                hangupActionService = args[7] as? String ?: "",
+                hangupActionEntityId = args[8] as? String ?: "",
+                streamButtonLayout = args[9] as StreamButtonLayout
             )
         }
     }

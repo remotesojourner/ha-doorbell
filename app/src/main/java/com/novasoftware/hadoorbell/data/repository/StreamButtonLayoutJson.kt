@@ -9,7 +9,6 @@ import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 
 internal object StreamButtonLayoutJson {
     fun encode(layout: StreamButtonLayout): String = JsonObject().apply {
-        addProperty("enabled", layout.enabled)
         add("top", encodeRow(layout.top))
         add("bottom", encodeRow(layout.bottom))
     }.toString()
@@ -18,9 +17,13 @@ internal object StreamButtonLayoutJson {
         val layout = JsonParser.parseString(json).asJsonObject
         StreamButtonLayout(
             top = decodeRow(layout.getAsJsonArray("top")),
-            bottom = decodeRow(layout.getAsJsonArray("bottom")),
-            enabled = if (layout.has("enabled")) layout.boolean("enabled") else true
+            bottom = decodeRow(layout.getAsJsonArray("bottom"))
         )
+    }.getOrNull()
+
+    fun previousEnabledFlag(json: String): Boolean? = runCatching {
+        val layout = JsonParser.parseString(json).asJsonObject
+        if (layout.has("enabled")) layout.boolean("enabled") else null
     }.getOrNull()
 
     private fun encodeRow(buttons: List<StreamButton>): JsonArray = JsonArray().apply {
@@ -44,6 +47,12 @@ internal object StreamButtonLayoutJson {
             }
             is StreamButtonAction.RunScript -> entityAction("runScript", action.entityId)
             is StreamButtonAction.TurnOn -> entityAction("turnOn", action.entityId)
+            is StreamButtonAction.QuickReply -> entityAction("quickReply", action.entityId)
+            is StreamButtonAction.DoorLock -> entityAction("doorLock", action.entityId)
+            is StreamButtonAction.OpenDoor -> {
+                entityAction("openDoor", action.entityId)
+                addProperty("service", action.service)
+            }
         }
     }
 
@@ -69,6 +78,9 @@ internal object StreamButtonLayoutJson {
             "selectOption" -> StreamButtonAction.SelectOption(string("entityId"), string("option"))
             "runScript" -> StreamButtonAction.RunScript(string("entityId"))
             "turnOn" -> StreamButtonAction.TurnOn(string("entityId"))
+            "quickReply" -> StreamButtonAction.QuickReply(string("entityId"))
+            "doorLock" -> StreamButtonAction.DoorLock(string("entityId"))
+            "openDoor" -> StreamButtonAction.OpenDoor(string("entityId"), string("service"))
             else -> error("Unsupported stream button action")
         }
     }

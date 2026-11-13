@@ -15,7 +15,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
@@ -41,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,6 +54,7 @@ import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
+import com.novasoftware.hadoorbell.domain.usecase.OpenDoorUseCase
 import java.util.UUID
 
 @Composable
@@ -59,7 +64,8 @@ internal fun StreamButtonEditor(
     isLoadingEntities: Boolean,
     entityLoadError: String?,
     onLoadEntities: () -> Unit,
-    onLayoutChange: (StreamButtonLayout) -> Unit
+    onLayoutChange: (StreamButtonLayout) -> Unit,
+    onEditCall: (() -> Unit)? = null
 ) {
     var editingRow by rememberSaveable { mutableStateOf<ButtonRow?>(null) }
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -74,9 +80,14 @@ internal fun StreamButtonEditor(
                 style = MaterialTheme.typography.titleSmall
             )
             if (row == ButtonRow.BOTTOM) {
-                Text(
-                    text = stringResource(R.string.stream_button_fixed_bottom),
-                    style = MaterialTheme.typography.bodySmall
+                FixedButton(
+                    label = stringResource(R.string.stream_button_sound),
+                    icon = Icons.AutoMirrored.Filled.VolumeUp
+                )
+                FixedButton(
+                    label = stringResource(R.string.stream_button_call),
+                    icon = Icons.Default.Call,
+                    onEdit = onEditCall
                 )
             }
             buttons.forEachIndexed { index, button ->
@@ -143,6 +154,22 @@ internal fun StreamButtonEditor(
 }
 
 @Composable
+private fun FixedButton(label: String, icon: ImageVector, onEdit: (() -> Unit)? = null) {
+    val editLabel = stringResource(R.string.stream_button_edit_call)
+    ListItem(
+        headlineContent = { Text(label) },
+        leadingContent = { Icon(icon, contentDescription = null) },
+        trailingContent = if (onEdit != null) {
+            { Icon(Icons.Default.Edit, contentDescription = null) }
+        } else null,
+        modifier = if (onEdit != null) {
+            Modifier.clickable(onClickLabel = editLabel, onClick = onEdit)
+        } else Modifier,
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+@Composable
 private fun StreamButtonListItem(
     button: StreamButton,
     onEdit: () -> Unit,
@@ -157,7 +184,7 @@ private fun StreamButtonListItem(
     val actionLabel = stringResource(actionKind.label)
     val details = when (val action = button.action) {
         is StreamButtonAction.SelectOption -> action.option
-        else -> action.targetEntityId()
+        else -> action.entityId
     }
     ListItem(
         headlineContent = {
@@ -170,7 +197,7 @@ private fun StreamButtonListItem(
                 overflow = TextOverflow.Ellipsis
             )
         },
-        leadingContent = if (button.requiresAuthentication) {
+        leadingContent = if (actionKind.requiresAuthentication || button.requiresAuthentication) {
             {
                 Icon(
                     Icons.Default.Lock,
@@ -241,20 +268,35 @@ private fun EditStreamButtonDialog(
 ) {
     var kind by rememberSaveable { mutableStateOf(ActionKind.from(existing?.action)) }
     var label by rememberSaveable { mutableStateOf(existing?.label.orEmpty()) }
-    var entityId by rememberSaveable { mutableStateOf(existing?.action?.targetEntityId()) }
+    var entityId by rememberSaveable { mutableStateOf(existing?.action?.entityId) }
     var option by rememberSaveable {
         mutableStateOf((existing?.action as? StreamButtonAction.SelectOption)?.option)
     }
+    val savedDoor = existing?.action as? StreamButtonAction.OpenDoor
+    var doorService by rememberSaveable { mutableStateOf(savedDoor?.service.orEmpty()) }
     var requiresAuthentication by rememberSaveable {
         mutableStateOf(existing?.requiresAuthentication ?: false)
     }
     var showPicker by rememberSaveable { mutableStateOf(false) }
     val entity = entities.find { it.entityId == entityId }
-    val action = kind.buildAction(entityId, option)
+    val defaultDoorService = if (kind == ActionKind.OPEN_DOOR) {
+        OpenDoorUseCase.defaultServiceFor(entityId.orEmpty())
+    } else ""
+    val service = doorService.trim()
+    val validDoorService = if (service.isBlank()) {
+        defaultDoorService.isNotBlank()
+    } else {
+        SERVICE_NAME.matches(service)
+    }
+    val existingDoorBinding = savedDoor != null && savedDoor.entityId == entityId &&
+        savedDoor.service == service
+    val action = kind.buildAction(entityId, option, service).takeIf {
+        kind != ActionKind.OPEN_DOOR || validDoorService || existingDoorBinding
+    }
 
     if (showPicker) {
         HomeAssistantEntityPicker(
-            entities = entities.filter { it.domain in kind.domains },
+            entities = entities.filter { kind.acceptsDomain(it.domain) },
             isLoading = isLoadingEntities,
             loadError = entityLoadError,
             onRetry = onLoadEntities,
@@ -292,8 +334,10 @@ private fun EditStreamButtonDialog(
                     onSelect = { nextKind ->
                         if (nextKind != kind) {
                             kind = nextKind
-                            if (entityId?.substringBefore('.') !in nextKind.domains) {
-                                entityId = null
+                            entityId?.let { currentEntityId ->
+                                if (!nextKind.acceptsDomain(currentEntityId.substringBefore('.'))) {
+                                    entityId = null
+                                }
                             }
                             option = null
                         }
@@ -349,6 +393,33 @@ private fun EditStreamButtonDialog(
                     }
                 }
 
+                if (kind == ActionKind.OPEN_DOOR) {
+                    val serviceError = entityId != null && !validDoorService
+                    OutlinedTextField(
+                        value = doorService,
+                        onValueChange = { doorService = it },
+                        label = { Text(stringResource(R.string.stream_button_door_service)) },
+                        placeholder = { Text(defaultDoorService.ifBlank { "switch.turn_on" }) },
+                        supportingText = {
+                            Text(
+                                when {
+                                    serviceError && service.isBlank() ->
+                                        stringResource(R.string.stream_button_door_service_required)
+                                    serviceError ->
+                                        stringResource(R.string.stream_button_door_service_invalid)
+                                    defaultDoorService.isNotBlank() ->
+                                        stringResource(R.string.stream_button_door_service_default, defaultDoorService)
+                                    else ->
+                                        stringResource(R.string.stream_button_door_service_hint)
+                                }
+                            )
+                        },
+                        isError = serviceError,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+
                 OutlinedTextField(
                     value = label,
                     onValueChange = { label = it },
@@ -357,23 +428,33 @@ private fun EditStreamButtonDialog(
                     singleLine = true
                 )
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .toggleable(
-                            value = requiresAuthentication,
-                            role = Role.Switch,
-                            onValueChange = { requiresAuthentication = it }
-                        )
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                if (kind.requiresAuthentication) {
                     Text(
-                        stringResource(R.string.stream_button_require_auth),
-                        modifier = Modifier.weight(1f)
+                        text = stringResource(
+                            if (kind == ActionKind.DOOR_LOCK) R.string.stream_button_auth_to_unlock
+                            else R.string.stream_button_auth_to_open
+                        ),
+                        style = MaterialTheme.typography.bodySmall
                     )
-                    Switch(checked = requiresAuthentication, onCheckedChange = null)
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .toggleable(
+                                value = requiresAuthentication,
+                                role = Role.Switch,
+                                onValueChange = { requiresAuthentication = it }
+                            )
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            stringResource(R.string.stream_button_require_auth),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Switch(checked = requiresAuthentication, onCheckedChange = null)
+                    }
                 }
             }
         },
@@ -392,7 +473,7 @@ private fun EditStreamButtonDialog(
                                 id = existing?.id ?: UUID.randomUUID().toString(),
                                 label = label.trim(),
                                 action = action,
-                                requiresAuthentication = requiresAuthentication
+                                requiresAuthentication = kind.requiresAuthentication || requiresAuthentication
                             )
                         )
                     }
@@ -535,14 +616,25 @@ private enum class ButtonRow(
 private fun List<StreamButton>.move(from: Int, to: Int): List<StreamButton> =
     toMutableList().apply { add(to, removeAt(from)) }
 
-private enum class ActionKind(@param:StringRes val label: Int, val domains: Set<String>) {
+private val SERVICE_NAME = Regex("[a-z0-9_]+\\.[a-z0-9_]+")
+
+private enum class ActionKind(
+    @param:StringRes val label: Int,
+    private val domains: Set<String>? = null,
+    val requiresAuthentication: Boolean = false
+) {
     TOGGLE(R.string.stream_button_toggle, StreamButtonAction.TOGGLE_DOMAINS),
     PRESS(R.string.stream_button_press, StreamButtonAction.PRESS_DOMAINS),
     SELECT_OPTION(R.string.stream_button_select, StreamButtonAction.SELECT_DOMAINS),
     RUN_SCRIPT(R.string.stream_button_script, StreamButtonAction.SCRIPT_DOMAINS),
-    TURN_ON(R.string.stream_button_turn_on, StreamButtonAction.TURN_ON_DOMAINS);
+    TURN_ON(R.string.stream_button_turn_on, StreamButtonAction.TURN_ON_DOMAINS),
+    QUICK_REPLY(R.string.stream_button_quick_reply, StreamButtonAction.SELECT_DOMAINS),
+    DOOR_LOCK(R.string.stream_button_door_lock, StreamButtonAction.LOCK_DOMAINS, requiresAuthentication = true),
+    OPEN_DOOR(R.string.stream_button_open_door, requiresAuthentication = true);
 
-    fun buildAction(entityId: String?, option: String?): StreamButtonAction? {
+    fun acceptsDomain(domain: String): Boolean = domains?.contains(domain) ?: true
+
+    fun buildAction(entityId: String?, option: String?, service: String): StreamButtonAction? {
         if (entityId.isNullOrBlank()) return null
         return when (this) {
             TOGGLE -> StreamButtonAction.Toggle(entityId)
@@ -550,6 +642,9 @@ private enum class ActionKind(@param:StringRes val label: Int, val domains: Set<
             SELECT_OPTION -> option?.let { StreamButtonAction.SelectOption(entityId, it) }
             RUN_SCRIPT -> StreamButtonAction.RunScript(entityId)
             TURN_ON -> StreamButtonAction.TurnOn(entityId)
+            QUICK_REPLY -> StreamButtonAction.QuickReply(entityId)
+            DOOR_LOCK -> StreamButtonAction.DoorLock(entityId)
+            OPEN_DOOR -> StreamButtonAction.OpenDoor(entityId, service)
         }
     }
 
@@ -560,14 +655,9 @@ private enum class ActionKind(@param:StringRes val label: Int, val domains: Set<
             is StreamButtonAction.SelectOption -> SELECT_OPTION
             is StreamButtonAction.RunScript -> RUN_SCRIPT
             is StreamButtonAction.TurnOn -> TURN_ON
+            is StreamButtonAction.QuickReply -> QUICK_REPLY
+            is StreamButtonAction.DoorLock -> DOOR_LOCK
+            is StreamButtonAction.OpenDoor -> OPEN_DOOR
         }
     }
-}
-
-private fun StreamButtonAction.targetEntityId(): String = when (this) {
-    is StreamButtonAction.Toggle -> entityId
-    is StreamButtonAction.Press -> entityId
-    is StreamButtonAction.SelectOption -> entityId
-    is StreamButtonAction.RunScript -> entityId
-    is StreamButtonAction.TurnOn -> entityId
 }

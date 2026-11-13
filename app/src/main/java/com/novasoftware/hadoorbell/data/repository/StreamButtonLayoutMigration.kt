@@ -1,0 +1,114 @@
+package com.novasoftware.hadoorbell.data.repository
+
+import androidx.datastore.core.DataMigration
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.stringPreferencesKey
+import com.novasoftware.hadoorbell.domain.model.StreamButton
+import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
+import com.novasoftware.hadoorbell.domain.usecase.OpenDoorUseCase
+
+internal val STREAM_BUTTON_LAYOUT = stringPreferencesKey("stream_button_layout")
+
+internal object StreamButtonLayoutMigration : DataMigration<Preferences> {
+    private val quickReplyKey = stringPreferencesKey("quick_reply_entity_id")
+    private val doorEntityKey = stringPreferencesKey("door_entity_id")
+    private val doorServiceKey = stringPreferencesKey("door_service")
+    private val lockKey = stringPreferencesKey("lock_entity_id")
+    private val previousKeys = listOf(quickReplyKey, doorEntityKey, doorServiceKey, lockKey)
+
+    override suspend fun shouldMigrate(currentData: Preferences): Boolean =
+        previousKeys.any { it in currentData } ||
+            currentData[STREAM_BUTTON_LAYOUT]?.let(StreamButtonLayoutJson::previousEnabledFlag) != null
+
+    override suspend fun migrate(currentData: Preferences): Preferences {
+        val previousJson = currentData[STREAM_BUTTON_LAYOUT]
+        val previousLayout = previousJson?.let(StreamButtonLayoutJson::decode) ?: StreamButtonLayout()
+        val previousEnabled = previousJson?.let(StreamButtonLayoutJson::previousEnabledFlag)
+        val originalButtons = originalButtons(currentData)
+        val layout = if (previousEnabled != false) {
+            appendOriginalButtons(previousLayout, originalButtons)
+        } else {
+            mergeDrafts(originalButtons, previousLayout)
+        }
+        return currentData.toMutablePreferences().apply {
+            this[STREAM_BUTTON_LAYOUT] = StreamButtonLayoutJson.encode(layout)
+            previousKeys.forEach { remove(it) }
+        }.toPreferences()
+    }
+
+    override suspend fun cleanUp() = Unit
+
+    private fun originalButtons(preferences: Preferences): List<StreamButton> = buildList {
+        preferences.entityId(quickReplyKey)?.let { entityId ->
+            add(StreamButton("legacy-quick-reply", "Quick Reply", StreamButtonAction.QuickReply(entityId)))
+        }
+        preferences.entityId(doorEntityKey)?.let { entityId ->
+            add(StreamButton(
+                id = "legacy-open-door",
+                label = "Open Door",
+                action = StreamButtonAction.OpenDoor(entityId, preferences[doorServiceKey].orEmpty().trim()),
+                requiresAuthentication = true
+            ))
+        }
+        preferences.entityId(lockKey)?.let { entityId ->
+            add(StreamButton(
+                id = "legacy-door-lock",
+                label = "Door Lock",
+                action = StreamButtonAction.DoorLock(entityId),
+                requiresAuthentication = true
+            ))
+        }
+    }
+
+    private fun mergeDrafts(originalButtons: List<StreamButton>, drafts: StreamButtonLayout): StreamButtonLayout {
+        val topDrafts = drafts.top.filterNot { draft -> originalButtons.any { it.matches(draft) } }
+        val bottomDrafts = drafts.bottom.filterNot { draft -> originalButtons.any { it.matches(draft) } }
+        val maxButtons = StreamButtonLayout.MAX_BUTTONS_PER_ROW
+        val freeBottomSlots = maxButtons - originalButtons.size
+        return StreamButtonLayout(
+            top = (topDrafts + bottomDrafts.drop(freeBottomSlots)).take(maxButtons),
+            bottom = originalButtons + bottomDrafts.take(freeBottomSlots)
+        )
+    }
+
+    private fun appendOriginalButtons(layout: StreamButtonLayout, originals: List<StreamButton>): StreamButtonLayout {
+        val additions = originals.filterNot { original ->
+            layout.buttons.any { existing ->
+                original.matches(existing) &&
+                    (original.id == existing.id || original.requiresAuthentication == existing.requiresAuthentication)
+            }
+        }
+        val maxButtons = StreamButtonLayout.MAX_BUTTONS_PER_ROW
+        val freeBottomSlots = maxButtons - layout.bottom.size
+        return StreamButtonLayout(
+            top = (layout.top + additions.drop(freeBottomSlots)).take(maxButtons),
+            bottom = layout.bottom + additions.take(freeBottomSlots)
+        )
+    }
+
+    private fun StreamButton.matches(other: StreamButton): Boolean {
+        if (id == other.id || action == other.action) return true
+        val door = action as? StreamButtonAction.OpenDoor ?: return false
+        return door.entityId == other.action.entityId &&
+            door.resolvedService().isNotBlank() &&
+            door.resolvedService() == other.action.serviceName()
+    }
+
+    private fun StreamButtonAction.OpenDoor.resolvedService(): String =
+        service.ifBlank { OpenDoorUseCase.defaultServiceFor(entityId) }
+
+    private fun StreamButtonAction.serviceName(): String? {
+        val domain = entityId.substringBefore('.')
+        return when (this) {
+            is StreamButtonAction.OpenDoor -> resolvedService()
+            is StreamButtonAction.TurnOn -> "$domain.turn_on"
+            is StreamButtonAction.Press -> "$domain.press"
+            is StreamButtonAction.RunScript -> "script.turn_on"
+            else -> null
+        }
+    }
+
+    private fun Preferences.entityId(key: Preferences.Key<String>): String? =
+        get(key)?.trim()?.takeIf { it.isNotEmpty() }
+}

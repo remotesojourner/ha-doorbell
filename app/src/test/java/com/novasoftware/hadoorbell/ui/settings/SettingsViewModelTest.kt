@@ -40,12 +40,8 @@ class SettingsViewModelTest {
             url = "https://test.url",
             token = "token123",
             streamSource = "camera1",
-            quickReplyEntityId = "input_select.qr",
-            lockEntityId = "lock.front",
             instantTwoWayAudio = false,
             webrtcProvider = "webrtc",
-            doorEntityId = "switch.door_relay",
-            doorService = "switch.turn_on",
             answerActionService = "switch.turn_on",
             answerActionEntityId = "switch.doorbell_talk",
             hangupActionService = "switch.turn_off",
@@ -66,12 +62,8 @@ class SettingsViewModelTest {
         assertEquals("https://test.url", viewModel.uiState.value.url)
         assertEquals("token123", viewModel.uiState.value.token)
         assertEquals("camera1", viewModel.uiState.value.streamSource)
-        assertEquals("input_select.qr", viewModel.uiState.value.quickReplyEntityId)
-        assertEquals("lock.front", viewModel.uiState.value.lockEntityId)
         assertFalse(viewModel.uiState.value.instantTwoWayAudio)
         assertEquals("webrtc", viewModel.uiState.value.webrtcProvider)
-        assertEquals("switch.door_relay", viewModel.uiState.value.doorEntityId)
-        assertEquals("switch.turn_on", viewModel.uiState.value.doorService)
         assertEquals("switch.turn_on", viewModel.uiState.value.answerActionService)
         assertEquals("switch.doorbell_talk", viewModel.uiState.value.answerActionEntityId)
         assertEquals("switch.turn_off", viewModel.uiState.value.hangupActionService)
@@ -85,13 +77,16 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `updateQuickReplyEntityId disables instant two way audio if not blank`() {
+    fun `adding a quick reply button disables instant two way audio`() {
         viewModel.updateInstantTwoWayAudio(true)
         assertTrue(viewModel.uiState.value.instantTwoWayAudio)
-        
-        viewModel.updateQuickReplyEntityId("new.entity")
-        
-        assertEquals("new.entity", viewModel.uiState.value.quickReplyEntityId)
+
+        val reply = StreamButton("reply", "Quick Reply", StreamButtonAction.QuickReply("select.reply"))
+        viewModel.updateStreamButtonLayout(StreamButtonLayout(top = listOf(reply)))
+
+        assertEquals(listOf(reply), viewModel.uiState.value.streamButtonLayout.top)
+        assertFalse(viewModel.uiState.value.instantTwoWayAudio)
+        viewModel.updateInstantTwoWayAudio(true)
         assertFalse(viewModel.uiState.value.instantTwoWayAudio)
     }
 
@@ -110,12 +105,8 @@ class SettingsViewModelTest {
                     url = "https://updated.url",
                     token = "token123",
                     streamSource = "camera1",
-                    quickReplyEntityId = "input_select.qr",
-                    lockEntityId = "lock.front",
                     instantTwoWayAudio = false,
                     webrtcProvider = "webrtc",
-                    doorEntityId = "switch.door_relay",
-                    doorService = "switch.turn_on",
                     answerActionService = "switch.turn_on",
                     answerActionEntityId = "switch.doorbell_talk",
                     hangupActionService = "switch.turn_off",
@@ -133,22 +124,22 @@ class SettingsViewModelTest {
 
     @Test
     fun `changing the answer action requires authentication`() = runTest {
-        viewModel.updateAnswerActionService("lock.unlock")
+        viewModel.updateCallActions("lock.unlock", "switch.doorbell_talk", "switch.turn_off", "switch.doorbell_talk")
         assertTrue(viewModel.callActionsChanged())
 
-        viewModel.updateAnswerActionService("switch.turn_on")
+        viewModel.updateCallActions("switch.turn_on", "switch.doorbell_talk", "switch.turn_off", "switch.doorbell_talk")
         assertFalse(viewModel.callActionsChanged())
 
-        viewModel.updateAnswerActionEntityId("lock.front_door")
+        viewModel.updateCallActions("switch.turn_on", "lock.front_door", "switch.turn_off", "switch.doorbell_talk")
         assertTrue(viewModel.callActionsChanged())
     }
 
     @Test
     fun `changing the hang up action requires authentication`() = runTest {
-        viewModel.updateHangupActionService("script.doorbell_hangup")
+        viewModel.updateCallActions("switch.turn_on", "switch.doorbell_talk", "script.doorbell_hangup", "switch.doorbell_talk")
         assertTrue(viewModel.callActionsChanged())
 
-        viewModel.updateHangupActionEntityId("script.doorbell_hangup")
+        viewModel.updateCallActions("switch.turn_on", "switch.doorbell_talk", "switch.turn_off", "script.doorbell_hangup")
         assertTrue(viewModel.callActionsChanged())
     }
 
@@ -156,14 +147,14 @@ class SettingsViewModelTest {
     fun `unrelated settings do not require authentication`() = runTest {
         viewModel.updateUrl("https://other.url")
         viewModel.updateToken("other-token")
-        viewModel.updateDoorEntityId("switch.other_relay")
+
 
         assertFalse(viewModel.callActionsChanged())
     }
 
     @Test
     fun `saving keeps the saved call actions in sync`() = runTest {
-        viewModel.updateAnswerActionService("lock.unlock")
+        viewModel.updateCallActions("lock.unlock", "switch.doorbell_talk", "switch.turn_off", "switch.doorbell_talk")
         assertTrue(viewModel.callActionsChanged())
 
         viewModel.saveSettings {}
@@ -209,7 +200,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `disabling and restoring custom buttons preserves the layout and protected action`() = runTest {
+    fun `moving a protected button preserves its action and authentication`() = runTest {
         val door = StreamButton(
             id = "door",
             label = "Open door",
@@ -219,11 +210,6 @@ class SettingsViewModelTest {
         val layout = StreamButtonLayout(bottom = listOf(door))
         viewModel.updateStreamButtonLayout(layout)
         viewModel.saveSettings {}
-
-        viewModel.setCustomButtonsEnabled(false)
-        assertEquals(layout.copy(enabled = false), viewModel.uiState.value.streamButtonLayout)
-        viewModel.setCustomButtonsEnabled(true)
-        assertEquals(layout, viewModel.uiState.value.streamButtonLayout)
 
         viewModel.updateStreamButtonLayout(layout.copy(top = listOf(door), bottom = emptyList()))
         assertFalse(viewModel.protectedButtonsChanged())

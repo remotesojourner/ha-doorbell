@@ -12,6 +12,7 @@ import com.novasoftware.hadoorbell.domain.usecase.GetSelectOptionsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.LockDoorUseCase
 import com.novasoftware.hadoorbell.domain.model.LockState
 import com.novasoftware.hadoorbell.domain.model.StreamButton
+import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.usecase.OpenDoorUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SendQuickReplyUseCase
 import com.novasoftware.hadoorbell.domain.usecase.UnlockDoorUseCase
@@ -40,7 +41,6 @@ import javax.inject.Inject
 
 sealed class UiEvent {
     data class ShowToast(val message: String, val long: Boolean = false) : UiEvent()
-    data class RequestBiometricAuth(val forDoor: Boolean = false) : UiEvent()
     data class AuthenticateStreamButton(val button: StreamButton) : UiEvent()
 }
 
@@ -71,17 +71,14 @@ class StreamViewModel @Inject constructor(
     private var callAnswered = false
     private var initializeJob: Job? = null
     private var answerJob: Job? = null
+    private var quickReplyLoadJob: Job? = null
     private var pendingButtonAuthentication: UiEvent.AuthenticateStreamButton? = null
 
     fun initializeConnection(context: Context) {
         initializeJob?.cancel()
         isScreenActive = true
         initializeJob = viewModelScope.launch {
-            val layout = appPreferences.streamButtonLayoutFlow.first()?.takeIf { it.enabled }
-            val qrId = appPreferences.quickReplyEntityIdFlow.first() ?: ""
-            val lId = appPreferences.lockEntityIdFlow.first() ?: ""
-            val dId = appPreferences.doorEntityIdFlow.first() ?: ""
-            val dService = appPreferences.doorServiceFlow.first() ?: ""
+            val layout = appPreferences.streamButtonLayoutFlow.first()
             val answerService = appPreferences.answerActionServiceFlow.first() ?: ""
             val answerEntity = appPreferences.answerActionEntityIdFlow.first() ?: ""
             val hangupService = appPreferences.hangupActionServiceFlow.first() ?: ""
@@ -89,17 +86,13 @@ class StreamViewModel @Inject constructor(
 
             _uiState.update {
                 it.copy(
-                    quickReplyEntityId = qrId,
-                    lockEntityId = lId,
-                    doorEntityId = dId,
-                    doorService = dService,
+                    lockStates = emptyMap(),
                     answerActionService = answerService,
                     answerActionEntityId = answerEntity,
                     hangupActionService = hangupService,
                     hangupActionEntityId = hangupEntity,
                     streamButtonLayout = layout,
-                    isStreamButtonLayoutReady = true,
-                    showQuickReplySheet = it.showQuickReplySheet && layout == null
+                    isStreamButtonLayoutReady = true
                 )
             }
             pendingButtonAuthentication?.let { request ->
@@ -107,20 +100,26 @@ class StreamViewModel @Inject constructor(
             }
 
             val instantTwoWay = appPreferences.instantTwoWayAudioFlow.first()
-            val micEnabled = instantTwoWay && (layout != null || qrId.isBlank())
+            val micEnabled = instantTwoWay && !layout.hasQuickReply
             _uiState.update { it.copy(isMicEnabled = micEnabled) }
             if (micEnabled) {
                 callAnswered = true
             }
 
-            if (layout == null && lId.isNotBlank()) {
-                val stateResult = repository.getEntityState(lId)
-                _uiState.update { it.copy(lockState = LockState.fromString(stateResult.getOrNull())) }
-            }
-
             val signalingClient = webRtcClientFactory.createClient()
             val manager = webRtcManagerFactory.create(context, signalingClient, viewModelScope)
             _uiState.update { it.copy(webRtcManager = manager) }
+
+            layout.buttons.mapNotNull { (it.action as? StreamButtonAction.DoorLock)?.entityId }
+                .distinct()
+                .forEach { entityId ->
+                    launch {
+                        val result = repository.getEntityState(entityId)
+                        if (entityId !in _uiState.value.runningLockEntityIds) {
+                            updateLockState(entityId, LockState.fromString(result.getOrNull()))
+                        }
+                    }
+                }
         }
     }
 
@@ -137,6 +136,7 @@ class StreamViewModel @Inject constructor(
         isScreenActive = false
         initializeJob?.cancel()
         initializeJob = null
+        dismissQuickReplySheet()
         answerJob?.cancel()
         answerJob = null
         val shouldHangUp = callAnswered
@@ -309,14 +309,28 @@ class StreamViewModel @Inject constructor(
     }
 
     fun handleStreamButton(button: StreamButton) {
-        if (!_uiState.value.isStreamButtonLayoutReady || !isConfiguredButton(button)) return
-        if (!button.requiresAuthentication) {
-            executeStreamButton(button)
-            return
+        val state = _uiState.value
+        if (!state.canRun(button) || !isConfiguredButton(button)) return
+        when (val action = button.action) {
+            is StreamButtonAction.DoorLock -> when (val lockState = state.lockStates[action.entityId] ?: LockState.Unknown) {
+                LockState.Jammed, LockState.Unknown -> viewModelScope.launch {
+                    val message = appContext.getString(R.string.stream_cannot_operate_lock, lockState.name)
+                    _uiEvent.emit(UiEvent.ShowToast(message))
+                }
+                LockState.Unlocked, LockState.Unlocking -> executeLockAction(button, action.entityId, unlock = false)
+                else -> requestStreamButtonAuthentication(button)
+            }
+            is StreamButtonAction.OpenDoor -> requestStreamButtonAuthentication(button)
+            else -> if (button.requiresAuthentication) {
+                requestStreamButtonAuthentication(button)
+            } else {
+                executeStreamButton(button)
+            }
         }
-        if (pendingButtonAuthentication != null || button.id in _uiState.value.runningStreamButtonIds) {
-            return
-        }
+    }
+
+    private fun requestStreamButtonAuthentication(button: StreamButton) {
+        if (pendingButtonAuthentication != null) return
         val request = UiEvent.AuthenticateStreamButton(button)
         pendingButtonAuthentication = request
         viewModelScope.launch { _uiEvent.emit(request) }
@@ -335,131 +349,99 @@ class StreamViewModel @Inject constructor(
     }
 
     private fun isConfiguredButton(button: StreamButton): Boolean {
-        val layout = _uiState.value.streamButtonLayout ?: return false
-        return button in layout.top || button in layout.bottom
+        return button in _uiState.value.streamButtonLayout.buttons
     }
 
     private fun executeStreamButton(button: StreamButton) {
+        when (val action = button.action) {
+            is StreamButtonAction.QuickReply -> openQuickReplySheet(button, action.entityId)
+            is StreamButtonAction.DoorLock -> executeLockAction(button, action.entityId, unlock = true)
+            else -> executeServiceButton(button)
+        }
+    }
+
+    private fun executeServiceButton(button: StreamButton) {
         if (button.id in _uiState.value.runningStreamButtonIds) return
         _uiState.update { it.copy(runningStreamButtonIds = it.runningStreamButtonIds + button.id) }
         viewModelScope.launch {
             try {
-                executeStreamButtonUseCase(button.action).onFailure { error ->
-                    val reason = error.localizedMessage ?: appContext.getString(R.string.stream_button_unknown_error)
-                    val message = appContext.getString(R.string.stream_button_failed, button.label, reason)
-                    _uiEvent.emit(UiEvent.ShowToast(message, long = true))
+                val result = when (val action = button.action) {
+                    is StreamButtonAction.OpenDoor -> openDoorUseCase(action.entityId, action.service)
+                    else -> executeStreamButtonUseCase(action)
                 }
+                result.onFailure { showButtonFailure(button, it) }
             } finally {
                 _uiState.update { it.copy(runningStreamButtonIds = it.runningStreamButtonIds - button.id) }
             }
         }
     }
 
-    fun openQuickReplySheet() {
-        _uiState.update { it.copy(showQuickReplySheet = true) }
+    private fun openQuickReplySheet(button: StreamButton, entityId: String) {
+        quickReplyLoadJob?.cancel()
+        val sheet = QuickReplySheetState(button)
+        _uiState.update { it.copy(quickReplySheet = sheet) }
+        quickReplyLoadJob = viewModelScope.launch {
+            val result = getSelectOptionsUseCase(entityId)
+            _uiState.update { state ->
+                if (state.quickReplySheet !== sheet) return@update state
+                val error = result.exceptionOrNull()?.let {
+                    appContext.getString(R.string.stream_button_failed, button.label, errorReason(it))
+                }
+                state.copy(quickReplySheet = sheet.copy(options = result.getOrNull(), error = error))
+            }
+        }
     }
 
     fun dismissQuickReplySheet() {
-        _uiState.update { it.copy(showQuickReplySheet = false) }
-    }
-
-    fun loadQuickReplyOptions() {
-        viewModelScope.launch {
-            getSelectOptionsUseCase(_uiState.value.quickReplyEntityId).fold(
-                onSuccess = { options ->
-                    _uiState.update { it.copy(quickReplyError = null, quickReplyOptions = options) }
-                },
-                onFailure = { e ->
-                    _uiState.update { it.copy(quickReplyError = "Failed to load options: ${e.message}") }
-                }
-            )
-        }
+        quickReplyLoadJob?.cancel()
+        quickReplyLoadJob = null
+        _uiState.update { it.copy(quickReplySheet = null) }
     }
 
     fun sendQuickReply(option: String) {
+        val sheet = _uiState.value.quickReplySheet ?: return
+        if (sheet.isSending || option !in sheet.options.orEmpty()) return
+        val sending = sheet.copy(isSending = true)
+        _uiState.update { it.copy(quickReplySheet = sending) }
         viewModelScope.launch {
-            sendQuickReplyUseCase(_uiState.value.quickReplyEntityId, option).fold(
-                onSuccess = {
-                    _uiEvent.emit(UiEvent.ShowToast("Sent: $option"))
-                    _uiState.update { it.copy(showQuickReplySheet = false) }
-                },
-                onFailure = { e ->
-                    _uiEvent.emit(UiEvent.ShowToast("Failed: ${e.message}", long = true))
+            val result = sendQuickReplyUseCase(sheet.button.action.entityId, option)
+            _uiState.update { state ->
+                if (state.quickReplySheet !== sending) return@update state
+                state.copy(quickReplySheet = sheet.takeIf { result.isFailure })
+            }
+            result.onSuccess {
+                _uiEvent.emit(UiEvent.ShowToast(appContext.getString(R.string.stream_quick_reply_sent, option)))
+            }.onFailure { showButtonFailure(sheet.button, it) }
+        }
+    }
+
+    private fun executeLockAction(button: StreamButton, entityId: String, unlock: Boolean) {
+        if (entityId in _uiState.value.runningLockEntityIds) return
+        _uiState.update { it.copy(runningLockEntityIds = it.runningLockEntityIds + entityId) }
+        viewModelScope.launch {
+            try {
+                val updates = if (unlock) unlockDoorUseCase(entityId) else lockDoorUseCase(entityId)
+                updates.collect { result ->
+                    updateLockState(entityId, result.getOrDefault(LockState.Unknown))
+                    result.onFailure { showButtonFailure(button, it) }
                 }
-            )
-        }
-    }
-
-    fun handleLockAction() {
-        val currentLockState = _uiState.value.lockState
-        if (currentLockState == LockState.Jammed || currentLockState == LockState.Unknown) {
-            viewModelScope.launch {
-                _uiEvent.emit(UiEvent.ShowToast(appContext.getString(R.string.stream_cannot_operate_lock, currentLockState.name)))
-            }
-            return
-        }
-
-        val targetState = if (currentLockState == LockState.Unlocked || currentLockState == LockState.Unlocking) LockState.Locked else LockState.Unlocked
-
-        if (targetState == LockState.Locked) {
-            executeLockDoor()
-        } else {
-            viewModelScope.launch {
-                _uiEvent.emit(UiEvent.RequestBiometricAuth())
+            } finally {
+                _uiState.update { it.copy(runningLockEntityIds = it.runningLockEntityIds - entityId) }
             }
         }
     }
 
-    fun handleDoorAction() {
-        if (_uiState.value.doorEntityId.isBlank()) return
-
-        viewModelScope.launch {
-            _uiEvent.emit(UiEvent.RequestBiometricAuth(forDoor = true))
-        }
+    private fun updateLockState(entityId: String, lockState: LockState) {
+        _uiState.update { it.copy(lockStates = it.lockStates + (entityId to lockState)) }
     }
 
-    fun executeOpenDoor() {
-        viewModelScope.launch {
-            openDoorUseCase(
-                entityId = _uiState.value.doorEntityId,
-                service = _uiState.value.doorService
-            ).onFailure { error ->
-                _uiEvent.emit(UiEvent.ShowToast("Open door failed: ${error.message}", long = true))
-            }
-        }
+    private suspend fun showButtonFailure(button: StreamButton, error: Throwable) {
+        val message = appContext.getString(R.string.stream_button_failed, button.label, errorReason(error))
+        _uiEvent.emit(UiEvent.ShowToast(message, long = true))
     }
 
-    fun executeUnlockDoor() {
-        viewModelScope.launch {
-            unlockDoorUseCase(_uiState.value.lockEntityId).collect { result ->
-                result.fold(
-                    onSuccess = { state ->
-                        _uiState.update { it.copy(lockState = state) }
-                    },
-                    onFailure = { e ->
-                        _uiEvent.emit(UiEvent.ShowToast("Unlock failed: ${e.message}", long = true))
-                        _uiState.update { it.copy(lockState = LockState.Unknown) }
-                    }
-                )
-            }
-        }
-    }
-
-    private fun executeLockDoor() {
-        viewModelScope.launch {
-            lockDoorUseCase(_uiState.value.lockEntityId).collect { result ->
-                result.fold(
-                    onSuccess = { state ->
-                        _uiState.update { it.copy(lockState = state) }
-                    },
-                    onFailure = { e ->
-                        _uiEvent.emit(UiEvent.ShowToast("Lock failed: ${e.message}", long = true))
-                        _uiState.update { it.copy(lockState = LockState.Unknown) }
-                    }
-                )
-            }
-        }
-    }
+    private fun errorReason(error: Throwable): String =
+        error.localizedMessage ?: appContext.getString(R.string.stream_button_unknown_error)
 
     override fun onCleared() {
         super.onCleared()

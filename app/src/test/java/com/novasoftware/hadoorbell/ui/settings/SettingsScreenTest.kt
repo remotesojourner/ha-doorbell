@@ -1,6 +1,7 @@
 package com.novasoftware.hadoorbell.ui.settings
 
 import android.content.Context
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -9,6 +10,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.core.app.ApplicationProvider
@@ -17,6 +19,9 @@ import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantEntitiesUseCas
 import com.novasoftware.hadoorbell.domain.usecase.GetSettingsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SaveSettingsUseCase
 import com.novasoftware.hadoorbell.domain.model.Settings
+import com.novasoftware.hadoorbell.domain.model.StreamButton
+import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -42,8 +47,6 @@ class SettingsScreenTest {
             url = "",
             token = "",
             streamSource = "",
-            quickReplyEntityId = "",
-            lockEntityId = "",
             instantTwoWayAudio = false,
             webrtcProvider = "frigate"
         )
@@ -74,8 +77,11 @@ class SettingsScreenTest {
         composeTestRule.onNodeWithText("Home Assistant URL").assertIsDisplayed()
         composeTestRule.onNodeWithText("Long-Lived Access Token").assertIsDisplayed()
         composeTestRule.onNodeWithText("go2rtc Stream Name").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Quick Reply Entity ID").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Door Lock Entity ID").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Stream Buttons").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Add top button").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Add bottom button").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Quick Reply Entity ID").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Use custom stream buttons").assertDoesNotExist()
         composeTestRule.onNodeWithText("Save & Connect", useUnmergedTree = true).assertIsDisplayed()
     }
 
@@ -128,16 +134,18 @@ class SettingsScreenTest {
             }
         }
 
-        // Enter quick reply ID
-        composeTestRule.onNodeWithText("Quick Reply Entity ID")
-            .performScrollTo()
-            .performTextInput("select.some_entity")
+        composeTestRule.runOnIdle {
+            val reply = StreamButton("reply", "Quick Reply", StreamButtonAction.QuickReply("select.reply"))
+            viewModel.updateStreamButtonLayout(StreamButtonLayout(bottom = listOf(reply)))
+        }
+        composeTestRule.onNodeWithText("Call").performSemanticsAction(SemanticsActions.OnClick)
+        composeTestRule.onNodeWithText("Call Button").assertIsDisplayed()
 
         // Wait for recomposition
         composeTestRule.waitForIdle()
 
         // Assert switch is disabled
-        composeTestRule.onNodeWithTag("instant_2way_switch")
+        composeTestRule.onNodeWithTag("instant_2way_switch", useUnmergedTree = true)
             .performScrollTo()
             .assertIsNotEnabled()
     }
@@ -154,8 +162,9 @@ class SettingsScreenTest {
             }
         }
 
-        // Initially enabled because quick reply is empty
-        val switchNode = composeTestRule.onNodeWithTag("instant_2way_switch")
+        composeTestRule.onNodeWithText("Call").performSemanticsAction(SemanticsActions.OnClick)
+        composeTestRule.onNodeWithText("Call Button").assertIsDisplayed()
+        val switchNode = composeTestRule.onNodeWithTag("instant_2way_switch", useUnmergedTree = true)
         switchNode.performScrollTo().assertIsEnabled()
         
         // Toggle it
@@ -165,7 +174,7 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun `door and call action fields are displayed`() {
+    fun `door and call actions are available through the button list`() {
         val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities)
         composeTestRule.setContent {
             androidx.compose.material3.MaterialTheme {
@@ -176,12 +185,20 @@ class SettingsScreenTest {
             }
         }
 
-        composeTestRule.waitForIdle()
-
-        composeTestRule.onNodeWithText("Door Open Action").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Door Open Entity ID").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Door Open Service (optional)").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Call Actions (Optional)").performScrollTo().assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            val door = StreamButton(
+                id = "legacy_open_door",
+                label = "Front Door",
+                action = StreamButtonAction.OpenDoor("switch.door_relay", "switch.turn_on"),
+                requiresAuthentication = true
+            )
+            viewModel.updateStreamButtonLayout(StreamButtonLayout(bottom = listOf(door)))
+        }
+        composeTestRule.onNodeWithText("Front Door").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Door Open Entity ID").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Answer Service").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Call").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Call Button").assertIsDisplayed()
         composeTestRule.onNodeWithText("Answer Service").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Hang Up Service").performScrollTo().assertIsDisplayed()
     }

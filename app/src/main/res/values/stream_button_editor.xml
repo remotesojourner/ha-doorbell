@@ -1,7 +1,9 @@
 <resources>
     <string name="stream_button_top">Top row</string>
     <string name="stream_button_bottom">Bottom row</string>
-    <string name="stream_button_fixed_bottom">Sound and Call appear first in this row.</string>
+    <string name="stream_button_sound">Sound</string>
+    <string name="stream_button_call">Call</string>
+    <string name="stream_button_edit_call">Edit call actions</string>
     <string name="stream_button_add_top">Add top button</string>
     <string name="stream_button_add_bottom">Add bottom button</string>
     <string name="stream_button_add">Add stream button</string>
@@ -27,6 +29,16 @@
     <string name="stream_button_select">Select option</string>
     <string name="stream_button_script">Run script</string>
     <string name="stream_button_turn_on">Turn on</string>
+    <string name="stream_button_quick_reply">Quick reply menu</string>
+    <string name="stream_button_door_lock">Lock or unlock</string>
+    <string name="stream_button_open_door">Open door</string>
+    <string name="stream_button_auth_to_unlock">Device authentication is required to unlock.</string>
+    <string name="stream_button_auth_to_open">Device authentication is required to open the door.</string>
+    <string name="stream_button_door_service">Door service</string>
+    <string name="stream_button_door_service_required">Enter a service for this entity.</string>
+    <string name="stream_button_door_service_invalid">Use the domain.service format.</string>
+    <string name="stream_button_door_service_default">Uses %1$s when left empty.</string>
+    <string name="stream_button_door_service_hint">Enter a service in domain.service format.</string>
     <string name="stream_button_choose_entity">Choose a Home Assistant entity</string>
     <string name="stream_button_entity_search">Search by name or entity ID</string>
     <string name="stream_button_loading_entities">Loading entities…</string>

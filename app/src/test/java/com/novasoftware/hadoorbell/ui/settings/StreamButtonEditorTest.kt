@@ -1,6 +1,8 @@
 package com.novasoftware.hadoorbell.ui.settings
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -9,7 +11,10 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.Modifier
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
 import com.novasoftware.hadoorbell.domain.model.StreamButton
@@ -39,7 +44,7 @@ class StreamButtonEditorTest {
         var requestedEntities = false
         composeTestRule.setContent {
             MaterialTheme {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
                     StreamButtonEditor(
                         layout = layout,
                         entities = entities,
@@ -87,7 +92,7 @@ class StreamButtonEditorTest {
         var layout by mutableStateOf(StreamButtonLayout(top = listOf(light, relay), bottom = listOf(chime)))
         composeTestRule.setContent {
             MaterialTheme {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
                     StreamButtonEditor(
                         layout = layout,
                         entities = emptyList(),
@@ -100,14 +105,49 @@ class StreamButtonEditorTest {
             }
         }
 
-        composeTestRule.onNodeWithContentDescription("Options for Gate relay").performClick()
+        composeTestRule.onNodeWithContentDescription("Options for Gate relay").performScrollTo().performClick()
         composeTestRule.onNodeWithText("Move to bottom row").performClick()
-        composeTestRule.onNodeWithContentDescription("Options for Gate relay").performClick()
+        composeTestRule.onNodeWithContentDescription("Options for Gate relay").performScrollTo().performClick()
         composeTestRule.onNodeWithText("Move up").performClick()
 
         composeTestRule.runOnIdle {
             assertEquals(listOf(light), layout.top)
             assertEquals(listOf(relay, chime), layout.bottom)
+        }
+    }
+
+    @Test
+    fun `renaming a migrated door button retains its service and protection`() {
+        val door = StreamButton(
+            "legacy-door",
+            "Door release",
+            StreamButtonAction.OpenDoor("switch.door_relay", "switch.turn_on"),
+            requiresAuthentication = true
+        )
+        var layout by mutableStateOf(StreamButtonLayout(bottom = listOf(door)))
+        composeTestRule.setContent {
+            MaterialTheme {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    StreamButtonEditor(
+                        layout = layout,
+                        entities = emptyList(),
+                        isLoadingEntities = false,
+                        entityLoadError = null,
+                        onLoadEntities = {},
+                        onLayoutChange = { layout = it }
+                    )
+                }
+            }
+        }
+
+        composeTestRule.onNodeWithText("Door release").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Door service").assertExists()
+        composeTestRule.onNodeWithText("Device authentication is required to open the door.").assertExists()
+        composeTestRule.onNodeWithText("Button label").performScrollTo().performTextReplacement("Open side door")
+        composeTestRule.onNodeWithText("Done").performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(door.copy(label = "Open side door"), layout.bottom.single())
         }
     }
 }
