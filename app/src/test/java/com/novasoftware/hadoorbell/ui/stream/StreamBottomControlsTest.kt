@@ -31,7 +31,9 @@ class StreamBottomControlsTest {
     @Test
     fun `migrated buttons keep the original size and placement`() {
         val reply = StreamButton("reply", StreamButtonAction.QuickReply("select.reply"))
-        val door = StreamButton("door", StreamButtonAction.OpenDoor("button.door"))
+        val door = StreamButton(
+            "door", StreamButtonAction.CallService("button", "press", "button.door", doorRelease = true)
+        )
         val hiddenLock = StreamButton(
             "lock", StreamButtonAction.DoorLock("lock.door"), visible = false
         )
@@ -57,7 +59,7 @@ class StreamBottomControlsTest {
         val buttons = (1..3).map { index ->
             StreamButton(
                 "action$index",
-                StreamButtonAction.Press("button.action$index"),
+                StreamButtonAction.CallService("button", "press", "button.action$index"),
                 entityName = "Action $index"
             )
         }

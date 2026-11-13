@@ -9,6 +9,7 @@ import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.model.normalizeHomeAssistantUrl
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantEntitiesUseCase
+import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantServicesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSettingsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SaveSettingsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,7 +30,8 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val getSettingsUseCase: GetSettingsUseCase,
     private val saveSettingsUseCase: SaveSettingsUseCase,
-    private val getHomeAssistantEntities: GetHomeAssistantEntitiesUseCase
+    private val getHomeAssistantEntities: GetHomeAssistantEntitiesUseCase,
+    private val getHomeAssistantServices: GetHomeAssistantServicesUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -37,6 +39,7 @@ class SettingsViewModel @Inject constructor(
 
     private var savedSettings = Settings()
     private var entityLoadJob: Job? = null
+    private var serviceLoadJob: Job? = null
 
     init {
         loadSettings()
@@ -90,8 +93,16 @@ class SettingsViewModel @Inject constructor(
 
     private fun updateConnection(update: (SettingsUiState) -> SettingsUiState) {
         entityLoadJob?.cancel()
+        serviceLoadJob?.cancel()
         _uiState.update {
-            update(it).copy(entities = emptyList(), isLoadingEntities = false, entityLoadError = null)
+            update(it).copy(
+                entities = emptyList(),
+                isLoadingEntities = false,
+                entityLoadError = null,
+                services = emptyList(),
+                isLoadingServices = false,
+                serviceLoadError = null
+            )
         }
     }
 
@@ -112,27 +123,51 @@ class SettingsViewModel @Inject constructor(
                     _uiState.update { it.copy(entities = entities, isLoadingEntities = false) }
                 },
                 onFailure = { failure ->
-                    val loadError = when {
-                        failure is IllegalArgumentException -> EntityLoadError.InvalidConnection
-                        failure is HttpException && failure.code() in listOf(401, 403) ->
-                            EntityLoadError.AuthenticationFailed
-                        else -> EntityLoadError.RequestFailed
-                    }
-                    _uiState.update { it.copy(isLoadingEntities = false, entityLoadError = loadError) }
+                    _uiState.update { it.copy(isLoadingEntities = false, entityLoadError = loadError(failure)) }
                 }
             )
         }
     }
 
-    private fun connectionError(state: SettingsUiState): EntityLoadError? {
-        if (state.url.isBlank() || state.token.isBlank()) return EntityLoadError.MissingConnection
+    fun loadServices() {
+        val state = _uiState.value
+        if (state.isLoadingServices) return
+
+        val error = connectionError(state)
+        if (error != null) {
+            _uiState.update { it.copy(serviceLoadError = error) }
+            return
+        }
+
+        _uiState.update { it.copy(isLoadingServices = true, serviceLoadError = null) }
+        serviceLoadJob = viewModelScope.launch {
+            getHomeAssistantServices(state.url, state.token).fold(
+                onSuccess = { services ->
+                    _uiState.update { it.copy(services = services, isLoadingServices = false) }
+                },
+                onFailure = { failure ->
+                    _uiState.update { it.copy(isLoadingServices = false, serviceLoadError = loadError(failure)) }
+                }
+            )
+        }
+    }
+
+    private fun loadError(failure: Throwable): HomeAssistantLoadError = when {
+        failure is IllegalArgumentException -> HomeAssistantLoadError.InvalidConnection
+        failure is HttpException && (failure.code() == 401 || failure.code() == 403) ->
+            HomeAssistantLoadError.AuthenticationFailed
+        else -> HomeAssistantLoadError.RequestFailed
+    }
+
+    private fun connectionError(state: SettingsUiState): HomeAssistantLoadError? {
+        if (state.url.isBlank() || state.token.isBlank()) return HomeAssistantLoadError.MissingConnection
         val draftUrl = normalizeHomeAssistantUrl(state.url).toHttpUrlOrNull()
-            ?: return EntityLoadError.InvalidConnection
+            ?: return HomeAssistantLoadError.InvalidConnection
         val savedUrl = normalizeHomeAssistantUrl(savedSettings.url).toHttpUrlOrNull()
         if (savedUrl != null && state.token.trim() == savedSettings.token.trim() &&
             draftUrl.origin() != savedUrl.origin()
         ) {
-            return EntityLoadError.ChangedServer
+            return HomeAssistantLoadError.ChangedServer
         }
         return null
     }

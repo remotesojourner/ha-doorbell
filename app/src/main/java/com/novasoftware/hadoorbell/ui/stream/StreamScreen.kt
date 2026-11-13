@@ -121,7 +121,7 @@ fun StreamScreen(
                             else R.string.stream_button_auth_subtitle
                         ),
                         allowWithoutScreenLock = action is StreamButtonAction.DoorLock ||
-                            action is StreamButtonAction.OpenDoor,
+                            action is StreamButtonAction.CallService && action.doorRelease,
                         onSuccess = { viewModel.onStreamButtonAuthentication(event, true) },
                         onCryptoFailure = {
                             viewModel.onStreamButtonAuthentication(event, false)

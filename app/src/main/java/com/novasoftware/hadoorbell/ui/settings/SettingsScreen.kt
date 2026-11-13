@@ -80,14 +80,8 @@ fun SettingsScreen(
     val controlsAuthTitle = stringResource(R.string.settings_controls_auth_title)
     val controlsAuthSubtitle = stringResource(R.string.settings_controls_auth_subtitle)
     val controlsAuthError = stringResource(R.string.settings_controls_auth_error)
-    val entityLoadError = when (uiState.entityLoadError) {
-        EntityLoadError.MissingConnection -> stringResource(R.string.settings_entities_missing_connection)
-        EntityLoadError.ChangedServer -> stringResource(R.string.settings_entities_changed_server)
-        EntityLoadError.InvalidConnection -> stringResource(R.string.settings_entities_invalid_connection)
-        EntityLoadError.AuthenticationFailed -> stringResource(R.string.settings_entities_auth_error)
-        EntityLoadError.RequestFailed -> stringResource(R.string.settings_entities_request_error)
-        null -> null
-    }
+    val entityLoadError = homeAssistantErrorMessage(uiState.entityLoadError, R.string.settings_entities_request_error)
+    val serviceLoadError = homeAssistantErrorMessage(uiState.serviceLoadError, R.string.settings_services_request_error)
 
     val saveSettings = {
         if (viewModel.callActionsChanged() || viewModel.protectedButtonsChanged()) {
@@ -306,7 +300,11 @@ fun SettingsScreen(
                         entityLoadError = entityLoadError,
                         onLoadEntities = viewModel::loadEntities,
                         onLayoutChange = viewModel::updateStreamButtonLayout,
-                        onEditCall = { showCallSettings = true }
+                        onEditCall = { showCallSettings = true },
+                        services = uiState.services,
+                        isLoadingServices = uiState.isLoadingServices,
+                        serviceLoadError = serviceLoadError,
+                        onLoadServices = viewModel::loadServices
                     )
                 }
             }
@@ -325,6 +323,17 @@ fun SettingsScreen(
         )
     }
 }
+
+@Composable
+private fun homeAssistantErrorMessage(error: HomeAssistantLoadError?, requestFailed: Int): String? =
+    when (error) {
+        HomeAssistantLoadError.MissingConnection -> stringResource(R.string.settings_entities_missing_connection)
+        HomeAssistantLoadError.ChangedServer -> stringResource(R.string.settings_entities_changed_server)
+        HomeAssistantLoadError.InvalidConnection -> stringResource(R.string.settings_entities_invalid_connection)
+        HomeAssistantLoadError.AuthenticationFailed -> stringResource(R.string.settings_entities_auth_error)
+        HomeAssistantLoadError.RequestFailed -> stringResource(requestFailed)
+        null -> null
+    }
 
 @Composable
 private fun CallSettingsDialog(

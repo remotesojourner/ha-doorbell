@@ -1,9 +1,10 @@
 package com.novasoftware.hadoorbell.ui.settings
 
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 
-enum class EntityLoadError {
+enum class HomeAssistantLoadError {
     MissingConnection,
     ChangedServer,
     InvalidConnection,
@@ -25,5 +26,8 @@ data class SettingsUiState(
     val streamButtonLayout: StreamButtonLayout = StreamButtonLayout(),
     val entities: List<HomeAssistantEntity> = emptyList(),
     val isLoadingEntities: Boolean = false,
-    val entityLoadError: EntityLoadError? = null
+    val entityLoadError: HomeAssistantLoadError? = null,
+    val services: List<HomeAssistantService> = emptyList(),
+    val isLoadingServices: Boolean = false,
+    val serviceLoadError: HomeAssistantLoadError? = null
 )

@@ -2,10 +2,12 @@ package com.novasoftware.hadoorbell.ui.settings
 
 import com.novasoftware.hadoorbell.MainDispatcherRule
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantEntitiesUseCase
+import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantServicesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSettingsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SaveSettingsUseCase
 import com.novasoftware.hadoorbell.domain.model.Settings
@@ -31,6 +33,7 @@ class SettingsViewModelTest {
 
     private lateinit var getSettingsUseCase: GetSettingsUseCase
     private lateinit var saveSettingsUseCase: SaveSettingsUseCase
+    private val getHomeAssistantServices = io.mockk.mockk<GetHomeAssistantServicesUseCase>()
     private lateinit var getHomeAssistantEntities: GetHomeAssistantEntitiesUseCase
     private lateinit var viewModel: SettingsViewModel
 
@@ -53,7 +56,7 @@ class SettingsViewModelTest {
         saveSettingsUseCase = mockk(relaxed = true)
 
         getHomeAssistantEntities = mockk()
-        viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities)
+        viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities, getHomeAssistantServices)
     }
 
     @Test
@@ -168,7 +171,7 @@ class SettingsViewModelTest {
         viewModel.updateUrl("https://new.url")
         viewModel.loadEntities()
 
-        assertEquals(EntityLoadError.ChangedServer, viewModel.uiState.value.entityLoadError)
+        assertEquals(HomeAssistantLoadError.ChangedServer, viewModel.uiState.value.entityLoadError)
         coVerify(exactly = 0) { getHomeAssistantEntities(any(), any()) }
 
         viewModel.updateToken("new-token")
@@ -179,6 +182,27 @@ class SettingsViewModelTest {
         coVerify(exactly = 0) { saveSettingsUseCase(any()) }
         viewModel.updateUrl("https://other.url")
         assertTrue(viewModel.uiState.value.entities.isEmpty())
+    }
+
+    @Test
+    fun `service discovery uses the draft connection and resets after credentials change`() = runTest {
+        val catalog = listOf(HomeAssistantService("light", "turn_on"))
+        coEvery { getHomeAssistantServices("https://test.url", "token123") } returns Result.success(catalog)
+
+        viewModel.loadServices()
+        assertEquals(catalog, viewModel.uiState.value.services)
+
+        viewModel.updateUrl("https://new.url")
+        viewModel.loadServices()
+        assertTrue(viewModel.uiState.value.services.isEmpty())
+        assertEquals(HomeAssistantLoadError.ChangedServer, viewModel.uiState.value.serviceLoadError)
+        coVerify(exactly = 0) { getHomeAssistantServices("https://new.url", any()) }
+
+        viewModel.updateToken("new-token")
+        coEvery { getHomeAssistantServices("https://new.url", "new-token") } returns Result.success(catalog)
+        viewModel.loadServices()
+        assertEquals(catalog, viewModel.uiState.value.services)
+        coVerify(exactly = 0) { saveSettingsUseCase(any()) }
     }
 
     @Test
@@ -203,7 +227,7 @@ class SettingsViewModelTest {
     fun `moving a protected button preserves its action and authentication`() = runTest {
         val door = StreamButton(
             id = "door",
-            action = StreamButtonAction.Press("button.door"),
+            action = StreamButtonAction.CallService("button", "press", "button.door"),
             requiresAuthentication = true
         )
         val layout = StreamButtonLayout(bottom = listOf(door))

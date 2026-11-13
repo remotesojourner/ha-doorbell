@@ -29,6 +29,7 @@
     <string name="settings_entities_invalid_connection">Check the Home Assistant URL and access token.</string>
     <string name="settings_entities_auth_error">Home Assistant denied access. Check your access token.</string>
     <string name="settings_entities_request_error">Could not load Home Assistant entities. Check the connection and try again.</string>
+    <string name="settings_services_request_error">Could not load Home Assistant services. Check the connection and try again.</string>
     <string name="settings_controls_auth_title">Change Stream Controls</string>
     <string name="settings_controls_auth_subtitle">Authenticate to save changes to protected controls</string>
     <string name="settings_controls_auth_error">Authentication required to save these changes</string>

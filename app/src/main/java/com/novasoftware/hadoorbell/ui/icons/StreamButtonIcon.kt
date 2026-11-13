@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.QuestionMark
@@ -86,9 +88,11 @@ internal fun resolveStreamButtonIcon(
         ?: entityIcon?.iconName()?.takeIf(icons::containsKey)
     if (resolved != null) return resolved
 
-    return when (button.action) {
-        is StreamButtonAction.DoorLock, is StreamButtonAction.OpenDoor, is StreamButtonAction.QuickReply -> null
-        else -> defaultHomeAssistantIcon(button.action.entityId)?.takeIf(icons::containsKey)
+    val action = button.action
+    return when {
+        action is StreamButtonAction.DoorLock || action is StreamButtonAction.QuickReply -> null
+        action is StreamButtonAction.CallService && action.doorRelease -> null
+        else -> defaultHomeAssistantIcon(action.entityId)?.takeIf(icons::containsKey)
     }
 }
 
@@ -117,13 +121,18 @@ internal fun streamButtonFallbackIcon(
     action: StreamButtonAction,
     lockState: LockState = LockState.Locked
 ): ImageVector = when (action) {
-    is StreamButtonAction.Toggle -> Icons.Default.ToggleOn
-    is StreamButtonAction.Press -> Icons.Default.TouchApp
-    is StreamButtonAction.SelectOption -> Icons.AutoMirrored.Filled.List
+    is StreamButtonAction.CallService -> when {
+        action.doorRelease -> Icons.Default.LockOpen
+        action.service == "toggle" -> Icons.Default.ToggleOn
+        action.service == "press" -> Icons.Default.TouchApp
+        action.service == "select_option" -> Icons.AutoMirrored.Filled.List
+        action.service == "turn_on" -> Icons.Default.PowerSettingsNew
+        else -> Icons.Default.Bolt
+    }
     is StreamButtonAction.RunScript -> Icons.Default.PlayArrow
-    is StreamButtonAction.TurnOn -> Icons.Default.PowerSettingsNew
+    is StreamButtonAction.TriggerAutomation -> Icons.Default.Bolt
+    is StreamButtonAction.FireEvent -> Icons.Default.Notifications
     is StreamButtonAction.QuickReply -> Icons.AutoMirrored.Filled.Chat
-    is StreamButtonAction.OpenDoor -> Icons.Default.LockOpen
     is StreamButtonAction.DoorLock -> when (lockState) {
         LockState.Locked -> Icons.Default.Lock
         LockState.Unlocked -> Icons.Default.LockOpen

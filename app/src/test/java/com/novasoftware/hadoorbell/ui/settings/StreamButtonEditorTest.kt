@@ -20,7 +20,9 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.Modifier
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.google.gson.JsonObject
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
@@ -66,6 +68,8 @@ class StreamButtonEditorTest {
 
         composeTestRule.onNodeWithText("Front door").performScrollTo().performClick()
         composeTestRule.onNodeWithText("Home Assistant entity").assertExists()
+        composeTestRule.onNode(hasText("Call a service") and hasAnyAncestor(isDialog())).performClick()
+        composeTestRule.onNode(hasText("Call a service") and isSelected()).assertIsDisplayed().performClick()
         composeTestRule.onNode(hasText("Lock or unlock") and hasAnyAncestor(isDialog())).performClick()
         composeTestRule.onNode(hasText("Lock or unlock") and isSelected()).assertIsDisplayed().performClick()
         composeTestRule.onNode(hasText("Front door") and hasAnyAncestor(isDialog())).performClick()
@@ -96,21 +100,22 @@ class StreamButtonEditorTest {
                         isLoadingEntities = false,
                         entityLoadError = null,
                         onLoadEntities = { requestedEntities = true },
-                        onLayoutChange = { layout = it }
+                        onLayoutChange = { layout = it },
+                        services = listOf(HomeAssistantService("select", "select_option", "Select option"))
                     )
                 }
             }
         }
 
         composeTestRule.onNodeWithText("Add top button").performClick()
-        composeTestRule.onNodeWithText("Toggle").performClick()
+        composeTestRule.onNodeWithText("Choose a service").performClick()
         composeTestRule.onNodeWithText("Select option").performClick()
         composeTestRule.onNodeWithText("Choose a Home Assistant entity").performClick()
         composeTestRule.onNodeWithText("Door relay").assertDoesNotExist()
         composeTestRule.onNodeWithText("Search by name or entity ID").performTextInput("doorbell_reply")
         composeTestRule.onNodeWithText("Alarm mode").assertDoesNotExist()
         composeTestRule.onNodeWithText("Doorbell replies").performClick()
-        composeTestRule.onNodeWithText("Choose an option").performClick()
+        composeTestRule.onNodeWithText("Choose an option").performScrollTo().performClick()
         composeTestRule.onNodeWithText("Leave parcel").performClick()
         composeTestRule.onNodeWithText("Automatic").performScrollTo().performClick()
         composeTestRule.onNodeWithText("Search icon names").performTextInput("mdi:package-variant")
@@ -120,7 +125,10 @@ class StreamButtonEditorTest {
         composeTestRule.runOnIdle {
             assertTrue(requestedEntities)
             assertEquals(
-                StreamButtonAction.SelectOption("select.doorbell_reply", "Leave parcel"),
+                StreamButtonAction.CallService(
+                    "select", "select_option", "select.doorbell_reply",
+                    JsonObject().apply { addProperty("option", "Leave parcel") }
+                ),
                 layout.top.single().action
             )
             assertEquals("Doorbell replies", layout.top.single().entityName)
@@ -140,11 +148,11 @@ class StreamButtonEditorTest {
 
     @Test
     fun `moving a button between rows preserves the button and existing order`() {
-        val light = StreamButton("light", StreamButtonAction.Toggle("light.porch"), entityName = "Porch light")
-        val chime = StreamButton("chime", StreamButtonAction.Press("button.chime"), entityName = "Chime")
+        val light = StreamButton("light", StreamButtonAction.CallService("light", "toggle", "light.porch"), entityName = "Porch light")
+        val chime = StreamButton("chime", StreamButtonAction.CallService("button", "press", "button.chime"), entityName = "Chime")
         val relay = StreamButton(
             "relay",
-            StreamButtonAction.Toggle("switch.gate_relay"),
+            StreamButtonAction.CallService("switch", "toggle", "switch.gate_relay"),
             requiresAuthentication = true,
             entityName = "Gate relay"
         )
@@ -178,7 +186,7 @@ class StreamButtonEditorTest {
     fun `editing a migrated door button retains its service and protection`() {
         val door = StreamButton(
             "legacy-door",
-            StreamButtonAction.OpenDoor("switch.door_relay", "switch.turn_on"),
+            StreamButtonAction.CallService("switch", "turn_on", "switch.door_relay", doorRelease = true),
             requiresAuthentication = true,
             visible = false
         )
@@ -199,7 +207,7 @@ class StreamButtonEditorTest {
         }
 
         composeTestRule.onNodeWithText("switch.door_relay").performScrollTo().performClick()
-        composeTestRule.onNodeWithText("Door service").assertExists()
+        composeTestRule.onNodeWithText("switch.turn_on").assertExists()
         composeTestRule.onNodeWithText("If this device has a screen lock, it asks you to authenticate before opening the door.")
             .assertExists()
         composeTestRule.onNodeWithText("Done").performClick()

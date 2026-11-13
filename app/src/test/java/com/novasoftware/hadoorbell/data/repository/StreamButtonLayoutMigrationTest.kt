@@ -37,7 +37,7 @@ class StreamButtonLayoutMigrationTest {
         assertEquals(
             StreamButtonLayout(bottom = listOf(
                 StreamButton("legacy-quick-reply", StreamButtonAction.QuickReply("select.reply")),
-                StreamButton("legacy-open-door", StreamButtonAction.OpenDoor("switch.door", "switch.turn_on"), true),
+                StreamButton("legacy-open-door", doorRelease, true),
                 StreamButton("legacy-door-lock", StreamButtonAction.DoorLock("lock.entry"),
                     requiresAuthentication = true, visible = false)
             )),
@@ -53,9 +53,9 @@ class StreamButtonLayoutMigrationTest {
 
     @Test
     fun `enabled prior layout keeps custom positions and adds original controls in open slots`() = runTest {
-        val existingDoor = StreamButton("relay", StreamButtonAction.TurnOn("switch.door"), true)
-        val firstCustom = StreamButton("chime", StreamButtonAction.Press("button.chime"))
-        val secondCustom = StreamButton("porch", StreamButtonAction.Toggle("light.porch"))
+        val existingDoor = StreamButton("relay", StreamButtonAction.CallService("switch", "turn_on", "switch.door"), true)
+        val firstCustom = StreamButton("chime", StreamButtonAction.CallService("button", "press", "button.chime"))
+        val secondCustom = StreamButton("porch", StreamButtonAction.CallService("light", "toggle", "light.porch"))
         val layout = StreamButtonLayout(bottom = listOf(existingDoor, firstCustom, secondCustom))
         val previous = preferencesOf(
             doorEntityKey to "switch.door",
@@ -79,10 +79,10 @@ class StreamButtonLayoutMigrationTest {
 
     @Test
     fun `prior disabled draft keeps bottom order and moves overflow into free top slots`() = runTest {
-        val existingTop = StreamButton("top", StreamButtonAction.Toggle("light.porch"))
-        val firstDraft = StreamButton("draft1", StreamButtonAction.Press("button.chime"))
+        val existingTop = StreamButton("top", StreamButtonAction.CallService("light", "toggle", "light.porch"))
+        val firstDraft = StreamButton("draft1", StreamButtonAction.CallService("button", "press", "button.chime"))
         val secondDraft = StreamButton("draft2", StreamButtonAction.RunScript("script.garage"))
-        val thirdDraft = StreamButton("draft3", StreamButtonAction.TurnOn("switch.lights"))
+        val thirdDraft = StreamButton("draft3", StreamButtonAction.CallService("switch", "turn_on", "switch.lights"))
         val drafts = StreamButtonLayout(top = listOf(existingTop), bottom = listOf(firstDraft, secondDraft, thirdDraft))
         val previous = preferencesOf(
             doorEntityKey to "switch.door",
@@ -95,7 +95,7 @@ class StreamButtonLayoutMigrationTest {
 
         assertEquals(listOf(existingTop, secondDraft, thirdDraft), layout.top)
         assertEquals(
-            listOf(StreamButtonAction.OpenDoor("switch.door"), StreamButtonAction.DoorLock("lock.entry"), firstDraft.action),
+            listOf(doorRelease, StreamButtonAction.DoorLock("lock.entry"), firstDraft.action),
             layout.bottom.map(StreamButton::action)
         )
         assertFalse(layout.bottom[1].visible)
@@ -104,7 +104,7 @@ class StreamButtonLayoutMigrationTest {
 
     @Test
     fun `earlier untouched migration restores the hidden lock in a single pass`() = runTest {
-        val door = StreamButton("legacy-open-door", StreamButtonAction.OpenDoor("switch.door"), true)
+        val door = StreamButton("legacy-open-door", doorRelease, true)
         val lock = StreamButton("legacy-door-lock", StreamButtonAction.DoorLock("lock.entry"), true)
         val reply = StreamButton("legacy-quick-reply", StreamButtonAction.QuickReply("select.reply"))
         val layout = StreamButtonLayout(bottom = listOf(reply, door, lock))
@@ -122,7 +122,7 @@ class StreamButtonLayoutMigrationTest {
 
     @Test
     fun `earlier layouts with renamed or moved migrated controls keep their chosen visibility`() = runTest {
-        val door = StreamButton("legacy-open-door", StreamButtonAction.OpenDoor("switch.door"), true)
+        val door = StreamButton("legacy-open-door", doorRelease, true)
         val lock = StreamButton("legacy-door-lock", StreamButtonAction.DoorLock("lock.entry"), true)
         val renamed = StreamButtonLayout(bottom = listOf(door, lock))
         val reordered = StreamButtonLayout(bottom = listOf(lock, door))
@@ -144,7 +144,7 @@ class StreamButtonLayoutMigrationTest {
     @Test
     fun `upgrading a visible layout removes old labels without changing actions or icons`() = runTest {
         val button = StreamButton(
-            "porch", StreamButtonAction.Toggle("light.porch"),
+            "porch", StreamButtonAction.CallService("light", "toggle", "light.porch"),
             requiresAuthentication = true, icon = "mdi:lightbulb", entityIcon = "mdi:outdoor-lamp"
         )
         val layout = StreamButtonLayout(top = listOf(button))
@@ -164,6 +164,41 @@ class StreamButtonLayoutMigrationTest {
         assertEquals("light.porch", decoded.top.single().displayName)
     }
 
+    @Test
+    fun `consolidated actions migrate old rows and retain their service payloads`() = runTest {
+        val json = """{
+            "buttonVisibility": true,
+            "top": [
+                {"id":"toggle","requiresAuthentication":false,"action":{"type":"toggle","entityId":"light.porch"}},
+                {"id":"press","requiresAuthentication":false,"action":{"type":"press","entityId":"button.chime"}},
+                {"id":"on","requiresAuthentication":false,"action":{"type":"turnOn","entityId":"input_boolean.relay"}}
+            ],
+            "bottom": [
+                {"id":"select","requiresAuthentication":false,"action":{"type":"selectOption","entityId":"select.reply","option":"Leave it"}},
+                {"id":"door","requiresAuthentication":true,"action":{"type":"openDoor","entityId":"switch.door","service":""}}
+            ]
+        }"""
+        val previous = preferencesOf(STREAM_BUTTON_LAYOUT to json)
+        assertTrue(migration.shouldMigrate(previous))
+
+        val migrated = migration.migrate(previous)
+        val layout = checkNotNull(StreamButtonLayoutJson.decode(checkNotNull(migrated[STREAM_BUTTON_LAYOUT])))
+
+        assertEquals(listOf("toggle", "press", "on"), layout.top.map(StreamButton::id))
+        assertEquals(listOf("toggle", "press", "turn_on"), layout.top.map {
+            (it.action as StreamButtonAction.CallService).service
+        })
+        val select = layout.bottom.first().action as StreamButtonAction.CallService
+        assertEquals("select_option", select.service)
+        assertEquals("Leave it", select.data.get("option").asString)
+        assertEquals(doorRelease, layout.bottom.last().action)
+        assertTrue(layout.bottom.last().requiresAuthentication)
+        assertFalse(migration.shouldMigrate(migrated))
+    }
+
+    private val doorRelease =
+        StreamButtonAction.CallService("switch", "turn_on", "switch.door", doorRelease = true)
+
     private fun StreamButtonLayout.withPreviousEnabledFlag(enabled: Boolean): String =
         """{"enabled":$enabled,${legacyJson().removePrefix("{")}"""
 
@@ -175,6 +210,13 @@ class StreamButtonLayoutMigrationTest {
                     val button = element.asJsonObject
                     button.remove("visible")
                     val id = button.get("id").asString
+                    val action = button.getAsJsonObject("action")
+                    if (id == "legacy-open-door") {
+                        action.addProperty("type", "openDoor")
+                        action.addProperty("service", "")
+                        action.remove("domain")
+                        action.remove("doorRelease")
+                    }
                     val label = labels[id] ?: when (id) {
                         "legacy-open-door" -> "Open Door"
                         "legacy-door-lock" -> "Door Lock"

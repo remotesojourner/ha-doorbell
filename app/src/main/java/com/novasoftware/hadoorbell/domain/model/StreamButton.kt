@@ -1,5 +1,7 @@
 package com.novasoftware.hadoorbell.domain.model
 
+import com.google.gson.JsonObject
+
 data class StreamButton(
     val id: String,
     val action: StreamButtonAction,
@@ -9,7 +11,13 @@ data class StreamButton(
     val entityIcon: String? = null,
     val entityName: String? = null
 ) {
-    val displayName: String get() = entityName?.takeIf { it.isNotBlank() } ?: action.entityId
+    val displayName: String get() = entityName?.takeIf { it.isNotBlank() } ?: when (val currentAction = action) {
+        is StreamButtonAction.CallService -> currentAction.entityId.ifBlank {
+            "${currentAction.domain}.${currentAction.service}"
+        }
+        is StreamButtonAction.FireEvent -> currentAction.eventType
+        else -> currentAction.entityId
+    }
 }
 
 data class StreamButtonLayout(
@@ -37,23 +45,34 @@ data class StreamButtonLayout(
 sealed interface StreamButtonAction {
     val entityId: String
 
-    data class Toggle(override val entityId: String) : StreamButtonAction
-    data class Press(override val entityId: String) : StreamButtonAction
-    data class SelectOption(override val entityId: String, val option: String) : StreamButtonAction
-    data class RunScript(override val entityId: String) : StreamButtonAction
-    data class TurnOn(override val entityId: String) : StreamButtonAction
+    data class CallService(
+        val domain: String,
+        val service: String,
+        override val entityId: String = "",
+        val data: JsonObject = JsonObject(),
+        val doorRelease: Boolean = false,
+        val needsResponse: Boolean = false
+    ) : StreamButtonAction
+
+    data class RunScript(
+        override val entityId: String,
+        val variables: JsonObject = JsonObject()
+    ) : StreamButtonAction
+
+    data class TriggerAutomation(
+        override val entityId: String,
+        val skipConditions: Boolean = false
+    ) : StreamButtonAction
+
+    data class FireEvent(val eventType: String, val data: JsonObject = JsonObject()) : StreamButtonAction {
+        override val entityId: String get() = ""
+    }
+
     data class QuickReply(override val entityId: String) : StreamButtonAction
     data class DoorLock(override val entityId: String) : StreamButtonAction
-    data class OpenDoor(override val entityId: String, val service: String = "") : StreamButtonAction
 
     companion object {
-        val TOGGLE_DOMAINS = setOf(
-            "automation", "climate", "cover", "fan", "humidifier", "input_boolean",
-            "light", "media_player", "remote", "script", "siren", "switch", "valve"
-        )
-        val PRESS_DOMAINS = setOf("button", "input_button")
         val SELECT_DOMAINS = setOf("select", "input_select")
-        val TURN_ON_DOMAINS = setOf("switch", "input_boolean")
         val SCRIPT_DOMAINS = setOf("script")
         val LOCK_DOMAINS = setOf("lock")
     }

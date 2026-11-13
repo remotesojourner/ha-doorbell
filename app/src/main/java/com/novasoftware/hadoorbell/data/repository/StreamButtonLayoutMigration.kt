@@ -6,7 +6,6 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
-import com.novasoftware.hadoorbell.domain.usecase.OpenDoorUseCase
 
 internal val STREAM_BUTTON_LAYOUT = stringPreferencesKey("stream_button_layout")
 
@@ -20,7 +19,9 @@ internal object StreamButtonLayoutMigration : DataMigration<Preferences> {
     override suspend fun shouldMigrate(currentData: Preferences): Boolean =
         previousKeys.any { it in currentData } ||
             currentData[STREAM_BUTTON_LAYOUT]?.let {
-                !StreamButtonLayoutJson.hasVisibilityMarker(it) || StreamButtonLayoutJson.hasLegacyLabels(it)
+                !StreamButtonLayoutJson.hasVisibilityMarker(it) ||
+                    StreamButtonLayoutJson.hasLegacyLabels(it) ||
+                    StreamButtonLayoutJson.hasLegacyActions(it)
             } == true
 
     override suspend fun migrate(currentData: Preferences): Preferences {
@@ -51,7 +52,7 @@ internal object StreamButtonLayoutMigration : DataMigration<Preferences> {
         doorEntityId?.let { entityId ->
             add(StreamButton(
                 id = "legacy-open-door",
-                action = StreamButtonAction.OpenDoor(entityId, preferences[doorServiceKey].orEmpty().trim()),
+                action = StreamButtonLayoutJson.legacyDoorRelease(entityId, preferences[doorServiceKey].orEmpty()),
                 requiresAuthentication = true
             ))
         }
@@ -75,7 +76,8 @@ internal object StreamButtonLayoutMigration : DataMigration<Preferences> {
 
         val (door, lock) = layout.bottom.takeLast(2)
         if (door.id != "legacy-open-door" ||
-            door.action !is StreamButtonAction.OpenDoor || !door.requiresAuthentication ||
+            (door.action as? StreamButtonAction.CallService)?.doorRelease != true ||
+            !door.requiresAuthentication ||
             lock.id != "legacy-door-lock" ||
             lock.action !is StreamButtonAction.DoorLock || !lock.requiresAuthentication
         ) return layout
@@ -115,24 +117,15 @@ internal object StreamButtonLayoutMigration : DataMigration<Preferences> {
 
     private fun StreamButton.matches(other: StreamButton): Boolean {
         if (id == other.id || action == other.action) return true
-        val door = action as? StreamButtonAction.OpenDoor ?: return false
+        val door = action as? StreamButtonAction.CallService ?: return false
+        if (!door.doorRelease) return false
         return door.entityId == other.action.entityId &&
-            door.resolvedService().isNotBlank() &&
-            door.resolvedService() == other.action.serviceName()
-    }
-
-    private fun StreamButtonAction.OpenDoor.resolvedService(): String =
-        service.ifBlank { OpenDoorUseCase.defaultServiceFor(entityId) }
-
-    private fun StreamButtonAction.serviceName(): String? {
-        val domain = entityId.substringBefore('.')
-        return when (this) {
-            is StreamButtonAction.OpenDoor -> resolvedService()
-            is StreamButtonAction.TurnOn -> "$domain.turn_on"
-            is StreamButtonAction.Press -> "$domain.press"
-            is StreamButtonAction.RunScript -> "script.turn_on"
-            else -> null
-        }
+            door.service.isNotBlank() && when (val candidate = other.action) {
+                is StreamButtonAction.CallService -> door == candidate.copy(doorRelease = true)
+                is StreamButtonAction.RunScript ->
+                    door.domain == "script" && door.service == "turn_on" && candidate.variables.isEmpty
+                else -> false
+            }
     }
 
     private fun Preferences.entityId(key: Preferences.Key<String>): String? =

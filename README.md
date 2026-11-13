@@ -45,9 +45,11 @@ When you first launch the app, you will be prompted for:
 
 Open **Doorbell Setup → Stream Buttons** to add, edit, or reorder up to three actions per row. Sound and Call stay at the start of the bottom row, which can hold five buttons in total.
 
-Choose an action and pick a Home Assistant entity by name or ID. Buttons can toggle an entity, press a button, choose a specific select option, run a script, or turn on a relay. **Quick Reply** opens a menu of replies. **Lock or Unlock** operates a lock, and **Open Door** calls the entity's default service or a `domain.service` you enter. Door opening and unlocking prompt for authentication when the device has a secure screen lock. On devices without a screen lock or enrolled biometrics, the two door controls run directly.
+Choose **Call a service** to browse Home Assistant services, pick a target when needed, and enter any service data. Selecting `select.select_option` or `input_select.select_option` lets you choose an option from the entity's list. **Run a script** and **Trigger an automation** each have their own entity picker. **Fire an event** accepts an event name and optional data and requires a Home Assistant admin token.
 
-Existing door, lock, and quick reply settings move into the button list when you update. Tap **Call** in the list to set optional Answer and Hang Up services or start two-way audio immediately. With a Quick Reply button configured, the stream starts in listen-only mode so replies can play.
+**Quick reply menu** opens the full reply list from the stream. The stream starts in listen-only mode with this button enabled so replies can play. Existing buttons keep their configured actions when you update. The built-in **Lock or unlock** choice under **Call a service** still decides which operation to run from the lock's current state. Migrated door and lock buttons prompt for authentication when the device has a secure screen lock. On devices without a screen lock or enrolled biometrics, those controls run directly.
+
+Tap **Call** in the list to set optional Answer and Hang Up services or start two-way audio immediately.
 
 Stream buttons display icons. Pick a Material Design Icon for any editable button, or leave it on **Automatic** to use the icon reported by Home Assistant. The app uses a built-in icon when Home Assistant leaves it unspecified.
 

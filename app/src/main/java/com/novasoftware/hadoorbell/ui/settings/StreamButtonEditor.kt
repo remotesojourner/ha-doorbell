@@ -58,17 +58,25 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import com.google.gson.Strictness
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonToken
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
-import com.novasoftware.hadoorbell.domain.usecase.OpenDoorUseCase
+import com.novasoftware.hadoorbell.domain.model.isHomeAssistantEventType
+import com.novasoftware.hadoorbell.domain.model.isHomeAssistantServicePart
 import com.novasoftware.hadoorbell.ui.icons.StreamButtonIcon
 import com.novasoftware.hadoorbell.ui.icons.defaultHomeAssistantIcon
 import com.novasoftware.hadoorbell.ui.icons.rememberStreamButtonIconChoices
 import com.novasoftware.hadoorbell.ui.icons.resolveStreamButtonIcon
 import com.novasoftware.hadoorbell.ui.icons.streamButtonFallbackIcon
+import java.io.StringReader
 import java.util.UUID
 
 @Composable
@@ -79,7 +87,11 @@ internal fun StreamButtonEditor(
     entityLoadError: String?,
     onLoadEntities: () -> Unit,
     onLayoutChange: (StreamButtonLayout) -> Unit,
-    onEditCall: (() -> Unit)? = null
+    onEditCall: (() -> Unit)? = null,
+    services: List<HomeAssistantService> = emptyList(),
+    isLoadingServices: Boolean = false,
+    serviceLoadError: String? = null,
+    onLoadServices: () -> Unit = {}
 ) {
     var editingRow by rememberSaveable { mutableStateOf<ButtonRow?>(null) }
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -162,6 +174,10 @@ internal fun StreamButtonEditor(
             isLoadingEntities = isLoadingEntities,
             entityLoadError = entityLoadError,
             onLoadEntities = onLoadEntities,
+            services = services,
+            isLoadingServices = isLoadingServices,
+            serviceLoadError = serviceLoadError,
+            onLoadServices = onLoadServices,
             onDismiss = dismiss,
             onSave = { button ->
                 val buttons = row.buttons(layout)
@@ -207,8 +223,12 @@ private fun StreamButtonListItem(
     val actionKind = ActionKind.from(button.action)
     val actionLabel = stringResource(actionKind.label)
     val details = when (val action = button.action) {
-        is StreamButtonAction.SelectOption -> action.option
-        else -> action.entityId.takeUnless { it == button.displayName }
+        is StreamButtonAction.CallService -> listOfNotNull(
+            "${action.domain}.${action.service}".takeUnless { it == button.displayName },
+            action.data.get("option")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+        ).joinToString(" · ").ifBlank { null }
+        is StreamButtonAction.DoorLock -> stringResource(R.string.stream_button_door_lock)
+        else -> action.entityId.takeUnless { it.isBlank() || it == button.displayName }
     }
     val actionSummary = details?.let { stringResource(R.string.stream_button_action_summary, actionLabel, it) }
         ?: actionLabel
@@ -220,7 +240,9 @@ private fun StreamButtonListItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(button.displayName, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (actionKind.requiresAuthentication || button.requiresAuthentication) {
+                if (button.requiresAuthentication || button.action is StreamButtonAction.DoorLock ||
+                    (button.action as? StreamButtonAction.CallService)?.doorRelease == true
+                ) {
                     Icon(
                         Icons.Default.Lock,
                         contentDescription = stringResource(R.string.stream_button_require_auth),
@@ -315,75 +337,168 @@ private fun EditStreamButtonDialog(
     isLoadingEntities: Boolean,
     entityLoadError: String?,
     onLoadEntities: () -> Unit,
+    services: List<HomeAssistantService>,
+    isLoadingServices: Boolean,
+    serviceLoadError: String?,
+    onLoadServices: () -> Unit,
     onDismiss: () -> Unit,
     onSave: (StreamButton) -> Unit
 ) {
-    var kind by rememberSaveable { mutableStateOf(ActionKind.from(existing?.action)) }
-    var entityId by rememberSaveable { mutableStateOf(existing?.action?.entityId) }
-    var option by rememberSaveable {
-        mutableStateOf((existing?.action as? StreamButtonAction.SelectOption)?.option)
+    val savedAction = existing?.action
+    val savedService = savedAction as? StreamButtonAction.CallService
+    val savedEvent = savedAction as? StreamButtonAction.FireEvent
+    var kind by rememberSaveable { mutableStateOf(ActionKind.from(savedAction)) }
+    var entityId by rememberSaveable { mutableStateOf(savedAction?.entityId?.ifBlank { null }) }
+    var serviceId by rememberSaveable { mutableStateOf(savedService?.let(::serviceId).orEmpty()) }
+    var isLockAction by rememberSaveable { mutableStateOf(savedAction is StreamButtonAction.DoorLock) }
+    var eventType by rememberSaveable { mutableStateOf(savedEvent?.eventType.orEmpty()) }
+    var skipConditions by rememberSaveable {
+        mutableStateOf((savedAction as? StreamButtonAction.TriggerAutomation)?.skipConditions ?: false)
     }
-    val savedDoor = existing?.action as? StreamButtonAction.OpenDoor
-    var doorService by rememberSaveable { mutableStateOf(savedDoor?.service.orEmpty()) }
+    var option by rememberSaveable {
+        mutableStateOf(
+            savedService?.takeIf { isSelectOptionService(serviceId) }?.data?.get("option")
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+        )
+    }
+    var jsonText by rememberSaveable {
+        val savedData = when (savedAction) {
+            is StreamButtonAction.CallService -> savedAction.data.deepCopy().apply {
+                if (isSelectOptionService(serviceId)) remove("option")
+            }
+            is StreamButtonAction.RunScript -> savedAction.variables
+            is StreamButtonAction.FireEvent -> savedAction.data
+            else -> JsonObject()
+        }
+        mutableStateOf(savedData.takeUnless { it.size() == 0 }?.toString().orEmpty())
+    }
     var requiresAuthentication by rememberSaveable {
         mutableStateOf(existing?.requiresAuthentication ?: false)
     }
     var icon by rememberSaveable { mutableStateOf(existing?.icon) }
     var cachedEntityIcon by rememberSaveable { mutableStateOf(existing?.entityIcon) }
     var cachedEntityName by rememberSaveable { mutableStateOf(existing?.entityName) }
-    var showPicker by rememberSaveable { mutableStateOf(false) }
-    var showIconPicker by rememberSaveable { mutableStateOf(false) }
+    var picker by rememberSaveable { mutableStateOf<EditorPicker?>(null) }
     val entity = entities.find { it.entityId == entityId }
     val currentEntityIcon = if (entity != null) entity.icon else cachedEntityIcon
     val currentEntityName = entity?.name?.takeIf(String::isNotBlank) ?: cachedEntityName
     val automaticIcon = currentEntityIcon ?: entityId?.let(::defaultHomeAssistantIcon)
-    val defaultDoorService = if (kind == ActionKind.OPEN_DOOR) {
-        OpenDoorUseCase.defaultServiceFor(entityId.orEmpty())
-    } else ""
-    val service = doorService.trim()
-    val validDoorService = if (service.isBlank()) {
-        defaultDoorService.isNotBlank()
-    } else {
-        SERVICE_NAME.matches(service)
+    val service = serviceId.trim()
+    val selectedService = services.find { serviceId(it) == service }
+    val isService = kind == ActionKind.CALL_SERVICE
+    val isDoorRelease = isService && !isLockAction && savedService?.doorRelease == true
+    val selectOption = isService && !isLockAction && isSelectOptionService(service)
+    val optionalTarget = isService && !isLockAction && !selectOption && !isDoorRelease
+    val targetDomains = if (isService) serviceTargetDomains(service, isLockAction, selectedService) else kind.domains
+    val hasJsonData = isService && !isLockAction || kind == ActionKind.RUN_SCRIPT || kind == ActionKind.FIRE_EVENT
+    val data = remember(jsonText, hasJsonData) {
+        if (hasJsonData) parseJsonObject(jsonText) else JsonObject()
     }
-    val existingDoorBinding = savedDoor != null && savedDoor.entityId == entityId &&
-        savedDoor.service == service
-    val action = kind.buildAction(entityId, option, service).takeIf {
-        kind != ActionKind.OPEN_DOOR || validDoorService || existingDoorBinding
+    val trimmedEvent = eventType.trim()
+    val target = entityId.orEmpty()
+    val action = when (kind) {
+        ActionKind.CALL_SERVICE -> when {
+            isLockAction -> entityId?.let(StreamButtonAction::DoorLock)
+            !isServiceId(service) || data == null -> null
+            isDoorRelease && entityId == null -> null
+            selectOption && (entityId == null || option == null) -> null
+            else -> StreamButtonAction.CallService(
+                domain = service.substringBefore('.'),
+                service = service.substringAfter('.'),
+                entityId = target,
+                data = data.deepCopy().apply {
+                    if (target.isNotBlank()) remove("entity_id")
+                    if (selectOption) addProperty("option", option)
+                },
+                doorRelease = isDoorRelease,
+                needsResponse = selectedService?.needsResponse
+                    ?: (savedService?.let { serviceId(it) == service && it.needsResponse } == true)
+            )
+        }
+        ActionKind.RUN_SCRIPT -> if (entityId != null && data != null) StreamButtonAction.RunScript(target, data) else null
+        ActionKind.TRIGGER_AUTOMATION -> entityId?.let { StreamButtonAction.TriggerAutomation(it, skipConditions) }
+        ActionKind.FIRE_EVENT -> data?.takeIf { isHomeAssistantEventType(trimmedEvent) }
+            ?.let { StreamButtonAction.FireEvent(trimmedEvent, it) }
+        ActionKind.QUICK_REPLY -> entityId?.let(StreamButtonAction::QuickReply)
     }
 
-    if (showPicker) {
-        HomeAssistantEntityPicker(
-            entities = entities.filter { kind.acceptsDomain(it.domain) },
-            isLoading = isLoadingEntities,
-            loadError = entityLoadError,
-            onRetry = onLoadEntities,
-            onDismiss = { showPicker = false },
-            selectedEntityId = entityId,
-            onSelect = { selected ->
-                if (entityId != selected.entityId) {
+    fun clearEntity() {
+        entityId = null
+        option = null
+        cachedEntityIcon = null
+        cachedEntityName = null
+    }
+
+    when (picker) {
+        EditorPicker.ENTITY -> {
+            HomeAssistantEntityPicker(
+                entities = entities.filter { targetDomains.isEmpty() || it.domain in targetDomains },
+                isLoading = isLoadingEntities,
+                loadError = entityLoadError,
+                onRetry = onLoadEntities,
+                onDismiss = { picker = null },
+                selectedEntityId = entityId,
+                onSelect = { selected ->
+                    if (entityId != selected.entityId) option = null
                     entityId = selected.entityId
-                    option = null
+                    cachedEntityIcon = selected.icon
+                    cachedEntityName = selected.name.takeIf(String::isNotBlank)
+                    picker = null
                 }
-                cachedEntityIcon = selected.icon
-                cachedEntityName = selected.name.takeIf(String::isNotBlank)
-                showPicker = false
-            }
-        )
-        return
-    }
-
-    if (showIconPicker) {
-        StreamButtonIconPicker(
-            icon = icon,
-            automaticIcon = automaticIcon,
-            onDismiss = { showIconPicker = false },
-            onSelect = {
-                icon = it
-                showIconPicker = false
-            }
-        )
-        return
+            )
+            return
+        }
+        EditorPicker.ICON -> {
+            StreamButtonIconPicker(
+                icon = icon,
+                automaticIcon = automaticIcon,
+                onDismiss = { picker = null },
+                onSelect = {
+                    icon = it
+                    picker = null
+                }
+            )
+            return
+        }
+        EditorPicker.SERVICE -> {
+            HomeAssistantServicePicker(
+                services = services,
+                isLoading = isLoadingServices,
+                loadError = serviceLoadError,
+                onRetry = onLoadServices,
+                onDismiss = { picker = null },
+                serviceId = service,
+                isLockAction = isLockAction,
+                onSelect = { nextService, nextIsLock ->
+                    if (nextService != service || nextIsLock != isLockAction) {
+                        val descriptor = services.find { serviceId(it) == nextService }
+                        val nextDomains = serviceTargetDomains(nextService, nextIsLock, descriptor)
+                        if (nextDomains.isNotEmpty() && entityId?.substringBefore('.') !in nextDomains) {
+                            clearEntity()
+                        }
+                        option = null
+                        jsonText = ""
+                    }
+                    serviceId = nextService
+                    isLockAction = nextIsLock
+                    picker = null
+                }
+            )
+            return
+        }
+        EditorPicker.OPTION -> {
+            SelectOptionPicker(
+                options = entity?.options.orEmpty(),
+                selectedOption = option,
+                onDismiss = { picker = null },
+                onSelect = {
+                    option = it
+                    picker = null
+                }
+            )
+            return
+        }
+        null -> Unit
     }
 
     AlertDialog(
@@ -405,94 +520,111 @@ private fun EditStreamButtonDialog(
                     onSelect = { nextKind ->
                         if (nextKind != kind) {
                             kind = nextKind
-                            entityId?.let { currentEntityId ->
-                                if (!nextKind.acceptsDomain(currentEntityId.substringBefore('.'))) {
-                                    entityId = null
-                                    cachedEntityIcon = null
-                                    cachedEntityName = null
-                                }
+                            clearEntity()
+                            jsonText = ""
+                            if (nextKind == ActionKind.CALL_SERVICE) {
+                                serviceId = ""
+                                isLockAction = false
                             }
-                            option = null
                         }
                     }
                 )
 
-                Column {
-                    Text(
-                        stringResource(R.string.stream_button_entity),
-                        style = MaterialTheme.typography.labelMedium
+                if (isService) {
+                    EditorPickerButton(
+                        label = stringResource(R.string.stream_button_service),
+                        value = if (isLockAction) stringResource(R.string.stream_button_door_lock)
+                            else service.ifBlank { stringResource(R.string.stream_button_choose_service) },
+                        onClick = {
+                            onLoadServices()
+                            picker = EditorPicker.SERVICE
+                        }
                     )
-                    OutlinedButton(
+                    selectedService?.description?.takeIf(String::isNotBlank)?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+
+                if (kind != ActionKind.FIRE_EVENT && (!isService || isLockAction || service.isNotBlank())) {
+                    EditorPickerButton(
+                        label = stringResource(
+                            if (optionalTarget) R.string.stream_button_optional_target else R.string.stream_button_entity
+                        ),
+                        value = currentEntityName ?: entityId ?: stringResource(R.string.stream_button_choose_entity),
                         onClick = {
                             onLoadEntities()
-                            showPicker = true
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = currentEntityName ?: entityId ?: stringResource(R.string.stream_button_choose_entity),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                if (kind == ActionKind.SELECT_OPTION && entityId != null) {
-                    val options = entity?.options.orEmpty()
-                    if (options.isNotEmpty()) {
-                        EditorChoice(
-                            label = stringResource(R.string.stream_button_option),
-                            displayValue = option ?: stringResource(R.string.stream_button_choose_option),
-                            choices = options,
-                            selectedChoice = option,
-                            choiceLabel = { it },
-                            onSelect = { option = it }
-                        )
-                    } else {
-                        option?.let { Text(stringResource(R.string.stream_button_current_option, it)) }
-                        if (entity != null) {
-                            Text(
-                                stringResource(R.string.stream_button_no_options),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            picker = EditorPicker.ENTITY
                         }
-                        entityLoadError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                        TextButton(enabled = !isLoadingEntities, onClick = onLoadEntities) {
-                            Text(
-                                stringResource(
-                                    if (isLoadingEntities) R.string.stream_button_loading_entities
-                                    else R.string.stream_button_load_options
-                                )
-                            )
+                    )
+                    if (optionalTarget && entityId != null) {
+                        TextButton(onClick = ::clearEntity) {
+                            Text(stringResource(R.string.stream_button_clear_target))
                         }
                     }
                 }
 
-                if (kind == ActionKind.OPEN_DOOR) {
-                    val serviceError = entityId != null && !validDoorService
+                if (selectOption && entityId != null) {
+                    SelectOptionField(
+                        entity = entity,
+                        option = option,
+                        isLoading = isLoadingEntities,
+                        loadError = entityLoadError,
+                        onLoad = onLoadEntities,
+                        onOpen = { picker = EditorPicker.OPTION }
+                    )
+                }
+
+                if (kind == ActionKind.TRIGGER_AUTOMATION) {
+                    EditorSwitch(
+                        text = stringResource(R.string.stream_button_skip_conditions),
+                        checked = skipConditions,
+                        onCheckedChange = { skipConditions = it }
+                    )
+                }
+
+                if (kind == ActionKind.FIRE_EVENT) {
                     OutlinedTextField(
-                        value = doorService,
-                        onValueChange = { doorService = it },
-                        label = { Text(stringResource(R.string.stream_button_door_service)) },
-                        placeholder = { Text(defaultDoorService.ifBlank { "switch.turn_on" }) },
-                        supportingText = {
-                            Text(
-                                when {
-                                    serviceError && service.isBlank() ->
-                                        stringResource(R.string.stream_button_door_service_required)
-                                    serviceError ->
-                                        stringResource(R.string.stream_button_door_service_invalid)
-                                    defaultDoorService.isNotBlank() ->
-                                        stringResource(R.string.stream_button_door_service_default, defaultDoorService)
-                                    else ->
-                                        stringResource(R.string.stream_button_door_service_hint)
-                                }
-                            )
-                        },
-                        isError = serviceError,
+                        value = eventType,
+                        onValueChange = { eventType = it },
+                        label = { Text(stringResource(R.string.stream_button_event_name)) },
+                        supportingText = { Text(stringResource(R.string.stream_button_event_admin)) },
+                        isError = eventType.isNotBlank() && !isHomeAssistantEventType(trimmedEvent),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
+                }
+
+                if (hasJsonData) {
+                    OutlinedTextField(
+                        value = jsonText,
+                        onValueChange = { jsonText = it },
+                        label = {
+                            Text(stringResource(
+                                if (kind == ActionKind.RUN_SCRIPT) R.string.stream_button_script_variables
+                                else R.string.stream_button_action_data
+                            ))
+                        },
+                        supportingText = {
+                            Text(stringResource(
+                                if (data == null) R.string.stream_button_invalid_json
+                                else R.string.stream_button_json_object
+                            ))
+                        },
+                        isError = data == null,
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2,
+                        maxLines = 5
+                    )
+                    if (isService) {
+                        selectedService?.fields.orEmpty().filterKeys { key ->
+                            key != "entity_id" && (!selectOption || key != "option")
+                        }.takeUnless { it.isEmpty() }?.let { fields ->
+                            Text(
+                                stringResource(R.string.stream_button_service_fields, fields.keys.sorted().joinToString()),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
                 }
 
                 Column {
@@ -501,7 +633,7 @@ private fun EditStreamButtonDialog(
                         style = MaterialTheme.typography.labelMedium
                     )
                     OutlinedButton(
-                        onClick = { showIconPicker = true },
+                        onClick = { picker = EditorPicker.ICON },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         IconPreview(icon ?: automaticIcon)
@@ -514,33 +646,20 @@ private fun EditStreamButtonDialog(
                     }
                 }
 
-                if (kind.requiresAuthentication) {
+                if (isService && (isLockAction || isDoorRelease)) {
                     Text(
                         text = stringResource(
-                            if (kind == ActionKind.DOOR_LOCK) R.string.stream_button_auth_to_unlock
+                            if (isLockAction) R.string.stream_button_auth_to_unlock
                             else R.string.stream_button_auth_to_open
                         ),
                         style = MaterialTheme.typography.bodySmall
                     )
                 } else {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .toggleable(
-                                value = requiresAuthentication,
-                                role = Role.Switch,
-                                onValueChange = { requiresAuthentication = it }
-                            )
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            stringResource(R.string.stream_button_require_auth),
-                            modifier = Modifier.weight(1f)
-                        )
-                        Switch(checked = requiresAuthentication, onCheckedChange = null)
-                    }
+                    EditorSwitch(
+                        text = stringResource(R.string.stream_button_require_auth),
+                        checked = requiresAuthentication,
+                        onCheckedChange = { requiresAuthentication = it }
+                    )
                 }
             }
         },
@@ -558,7 +677,7 @@ private fun EditStreamButtonDialog(
                             StreamButton(
                                 id = existing?.id ?: UUID.randomUUID().toString(),
                                 action = action,
-                                requiresAuthentication = kind.requiresAuthentication || requiresAuthentication,
+                                requiresAuthentication = isService && (isLockAction || isDoorRelease) || requiresAuthentication,
                                 visible = existing?.visible ?: true,
                                 icon = icon,
                                 entityIcon = currentEntityIcon,
@@ -570,6 +689,176 @@ private fun EditStreamButtonDialog(
             ) {
                 Text(stringResource(R.string.stream_button_done))
             }
+        }
+    )
+}
+
+@Composable
+private fun EditorPickerButton(label: String, value: String, onClick: () -> Unit) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelMedium)
+        OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+            Text(value, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun HomeAssistantServicePicker(
+    services: List<HomeAssistantService>,
+    isLoading: Boolean,
+    loadError: String?,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+    serviceId: String,
+    isLockAction: Boolean,
+    onSelect: (String, Boolean) -> Unit
+) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val search = query.trim()
+    val matches = remember(services, search) {
+        services.filter {
+            serviceId(it).contains(search, ignoreCase = true) ||
+                it.name.orEmpty().contains(search, ignoreCase = true)
+        }
+    }
+    val lockLabel = stringResource(R.string.stream_button_door_lock)
+    val showLock = lockLabel.contains(search, ignoreCase = true)
+    val currentIsInCatalog = matches.any { serviceId(it) == serviceId }
+    val showManual = isServiceId(search) && matches.none { serviceId(it) == search }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.stream_button_choose_service)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text(stringResource(R.string.stream_button_search_services)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                } else if (loadError != null || services.isEmpty()) {
+                    Text(loadError ?: stringResource(R.string.stream_button_no_services))
+                    TextButton(onClick = onRetry) { Text(stringResource(R.string.stream_button_retry)) }
+                }
+                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                    if (showLock) {
+                        item {
+                            ServiceChoice(lockLabel, null, isLockAction) { onSelect("", true) }
+                        }
+                    }
+                    if (search.isEmpty() && isServiceId(serviceId) && !currentIsInCatalog) {
+                        item { ServiceChoice(serviceId, null, true) { onSelect(serviceId, false) } }
+                    }
+                    if (showManual) {
+                        item {
+                            ServiceChoice(
+                                stringResource(R.string.stream_button_use_service, search),
+                                null,
+                                search == serviceId && !isLockAction
+                            ) { onSelect(search, false) }
+                        }
+                    }
+                    items(matches, key = ::serviceId) { service ->
+                        val id = serviceId(service)
+                        val name = service.name?.takeIf(String::isNotBlank)
+                        ServiceChoice(name ?: id, id.takeIf { name != null }, id == serviceId && !isLockAction) {
+                            onSelect(id, false)
+                        }
+                    }
+                }
+                if (search.isNotBlank() && !showLock && !showManual && matches.isEmpty() && !isLoading) {
+                    Text(stringResource(R.string.stream_button_no_service_matches))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
+        }
+    )
+}
+
+@Composable
+private fun ServiceChoice(title: String, detail: String?, checked: Boolean, onSelect: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = detail?.let { { Text(it) } },
+        trailingContent = if (checked) { { Icon(Icons.Default.Check, contentDescription = null) } } else null,
+        modifier = Modifier.clickable(onClick = onSelect).semantics { selected = checked }
+    )
+}
+
+@Composable
+private fun EditorSwitch(text: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}
+
+@Composable
+private fun SelectOptionField(
+    entity: HomeAssistantEntity?,
+    option: String?,
+    isLoading: Boolean,
+    loadError: String?,
+    onLoad: () -> Unit,
+    onOpen: () -> Unit
+) {
+    val options = entity?.options.orEmpty()
+    if (options.isNotEmpty()) {
+        EditorPickerButton(
+            label = stringResource(R.string.stream_button_option),
+            value = option ?: stringResource(R.string.stream_button_choose_option),
+            onClick = onOpen
+        )
+    } else {
+        option?.let { Text(stringResource(R.string.stream_button_current_option, it)) }
+        if (entity != null) {
+            Text(
+                stringResource(R.string.stream_button_no_options),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        loadError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        TextButton(enabled = !isLoading, onClick = onLoad) {
+            Text(stringResource(
+                if (isLoading) R.string.stream_button_loading_entities else R.string.stream_button_load_options
+            ))
+        }
+    }
+}
+
+@Composable
+private fun SelectOptionPicker(
+    options: List<String>,
+    selectedOption: String?,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.stream_button_choose_option)) },
+        text = {
+            LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                items(options) { option ->
+                    ServiceChoice(option, null, option == selectedOption) { onSelect(option) }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
         }
     )
 }
@@ -795,48 +1084,58 @@ private enum class ButtonRow(
 private fun List<StreamButton>.move(from: Int, to: Int): List<StreamButton> =
     toMutableList().apply { add(to, removeAt(from)) }
 
-private val SERVICE_NAME = Regex("[a-z0-9_]+\\.[a-z0-9_]+")
+private fun serviceId(service: HomeAssistantService): String = "${service.domain}.${service.service}"
+private fun serviceId(service: StreamButtonAction.CallService): String = "${service.domain}.${service.service}"
 
-private enum class ActionKind(
-    @param:StringRes val label: Int,
-    private val domains: Set<String>? = null,
-    val requiresAuthentication: Boolean = false
-) {
-    TOGGLE(R.string.stream_button_toggle, StreamButtonAction.TOGGLE_DOMAINS),
-    PRESS(R.string.stream_button_press, StreamButtonAction.PRESS_DOMAINS),
-    SELECT_OPTION(R.string.stream_button_select, StreamButtonAction.SELECT_DOMAINS),
-    RUN_SCRIPT(R.string.stream_button_script, StreamButtonAction.SCRIPT_DOMAINS),
-    TURN_ON(R.string.stream_button_turn_on, StreamButtonAction.TURN_ON_DOMAINS),
-    QUICK_REPLY(R.string.stream_button_quick_reply, StreamButtonAction.SELECT_DOMAINS),
-    DOOR_LOCK(R.string.stream_button_door_lock, StreamButtonAction.LOCK_DOMAINS, requiresAuthentication = true),
-    OPEN_DOOR(R.string.stream_button_open_door, requiresAuthentication = true);
+private fun isServiceId(value: String): Boolean =
+    isHomeAssistantServicePart(value.substringBefore('.', "")) &&
+        isHomeAssistantServicePart(value.substringAfter('.', ""))
 
-    fun acceptsDomain(domain: String): Boolean = domains?.contains(domain) ?: true
+private fun isSelectOptionService(value: String): Boolean =
+    value == "select.select_option" || value == "input_select.select_option"
 
-    fun buildAction(entityId: String?, option: String?, service: String): StreamButtonAction? {
-        if (entityId.isNullOrBlank()) return null
-        return when (this) {
-            TOGGLE -> StreamButtonAction.Toggle(entityId)
-            PRESS -> StreamButtonAction.Press(entityId)
-            SELECT_OPTION -> option?.let { StreamButtonAction.SelectOption(entityId, it) }
-            RUN_SCRIPT -> StreamButtonAction.RunScript(entityId)
-            TURN_ON -> StreamButtonAction.TurnOn(entityId)
-            QUICK_REPLY -> StreamButtonAction.QuickReply(entityId)
-            DOOR_LOCK -> StreamButtonAction.DoorLock(entityId)
-            OPEN_DOOR -> StreamButtonAction.OpenDoor(entityId, service)
-        }
+private fun serviceTargetDomains(id: String, isLock: Boolean, descriptor: HomeAssistantService?): Set<String> {
+    if (isLock) return StreamButtonAction.LOCK_DOMAINS
+    if (isSelectOptionService(id)) return setOf(id.substringBefore('.'))
+    val filters = descriptor?.target?.get("entity") ?: return emptySet()
+    val entries = if (filters.isJsonArray) filters.asJsonArray.toList() else listOf(filters)
+    val domains = mutableSetOf<String>()
+    for (entry in entries) {
+        val domain = entry.takeIf { it.isJsonObject }?.asJsonObject?.get("domain") ?: return emptySet()
+        val values = if (domain.isJsonArray) domain.asJsonArray.toList() else listOf(domain)
+        if (values.any { !it.isJsonPrimitive || !it.asJsonPrimitive.isString }) return emptySet()
+        domains.addAll(values.map { it.asString })
     }
+    return domains
+}
+
+private fun parseJsonObject(value: String): JsonObject? {
+    if (value.isBlank()) return JsonObject()
+    return runCatching {
+        JsonReader(StringReader(value)).use { reader ->
+            reader.strictness = Strictness.STRICT
+            val parsed = JsonParser.parseReader(reader)
+            parsed.asJsonObject.takeIf { reader.peek() == JsonToken.END_DOCUMENT }
+        }
+    }.getOrNull()
+}
+
+private enum class EditorPicker { ENTITY, ICON, SERVICE, OPTION }
+
+private enum class ActionKind(@param:StringRes val label: Int, val domains: Set<String> = emptySet()) {
+    CALL_SERVICE(R.string.stream_button_call_service),
+    RUN_SCRIPT(R.string.stream_button_script, StreamButtonAction.SCRIPT_DOMAINS),
+    TRIGGER_AUTOMATION(R.string.stream_button_trigger_automation, setOf("automation")),
+    FIRE_EVENT(R.string.stream_button_fire_event),
+    QUICK_REPLY(R.string.stream_button_quick_reply, StreamButtonAction.SELECT_DOMAINS);
 
     companion object {
         fun from(action: StreamButtonAction?): ActionKind = when (action) {
-            is StreamButtonAction.Toggle, null -> TOGGLE
-            is StreamButtonAction.Press -> PRESS
-            is StreamButtonAction.SelectOption -> SELECT_OPTION
+            null, is StreamButtonAction.CallService, is StreamButtonAction.DoorLock -> CALL_SERVICE
             is StreamButtonAction.RunScript -> RUN_SCRIPT
-            is StreamButtonAction.TurnOn -> TURN_ON
+            is StreamButtonAction.TriggerAutomation -> TRIGGER_AUTOMATION
+            is StreamButtonAction.FireEvent -> FIRE_EVENT
             is StreamButtonAction.QuickReply -> QUICK_REPLY
-            is StreamButtonAction.DoorLock -> DOOR_LOCK
-            is StreamButtonAction.OpenDoor -> OPEN_DOOR
         }
     }
 }

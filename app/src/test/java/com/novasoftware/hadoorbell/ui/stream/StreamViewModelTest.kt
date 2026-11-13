@@ -1,6 +1,7 @@
 package com.novasoftware.hadoorbell.ui.stream
 
 import android.content.Context
+import com.google.gson.JsonObject
 import com.novasoftware.hadoorbell.MainDispatcherRule
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.data.repository.SettingsRepositoryImpl
@@ -13,7 +14,6 @@ import com.novasoftware.hadoorbell.domain.model.LockState
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
-import com.novasoftware.hadoorbell.domain.usecase.OpenDoorUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SendQuickReplyUseCase
 import com.novasoftware.hadoorbell.domain.usecase.UnlockDoorUseCase
 import com.novasoftware.hadoorbell.data.remote.HomeAssistantWebRtcClient
@@ -58,7 +58,6 @@ class StreamViewModelTest {
     private lateinit var unlockDoorUseCase: UnlockDoorUseCase
     private lateinit var getSelectOptionsUseCase: GetSelectOptionsUseCase
     private lateinit var sendQuickReplyUseCase: SendQuickReplyUseCase
-    private lateinit var openDoorUseCase: OpenDoorUseCase
     private lateinit var callActionUseCase: CallActionUseCase
     private lateinit var webRtcManager: WebRtcManager
     private lateinit var videoSink: VideoSink
@@ -84,6 +83,7 @@ class StreamViewModelTest {
             coEvery { getEntityState(any()) } returns Result.success("locked")
             coEvery { getEntityIcon(any()) } returns Result.success(null)
             coEvery { callService(any(), any(), any()) } returns Result.success(Unit)
+            coEvery { callService(any(), any(), any(), any(), any()) } returns Result.success(Unit)
         }
         
         val webRtcClient = mockk<HomeAssistantWebRtcClient>(relaxed = true)
@@ -104,13 +104,11 @@ class StreamViewModelTest {
         unlockDoorUseCase = mockk(relaxed = true)
         getSelectOptionsUseCase = mockk(relaxed = true)
         sendQuickReplyUseCase = mockk(relaxed = true)
-        openDoorUseCase = mockk(relaxed = true)
         callActionUseCase = CallActionUseCase(repository)
-
         viewModel = StreamViewModel(
             context, appPreferences, repository, webRtcClientFactory, webRtcManagerFactory,
             lockDoorUseCase, unlockDoorUseCase, getSelectOptionsUseCase, sendQuickReplyUseCase,
-            openDoorUseCase, callActionUseCase, ExecuteStreamButtonUseCase(repository)
+            callActionUseCase, ExecuteStreamButtonUseCase(repository)
         )
     }
 
@@ -127,20 +125,23 @@ class StreamViewModelTest {
 
     @Test
     fun `automatic icons refresh once per visible entity without delaying WebRTC`() = runTest {
-        val lamp = StreamButton("lamp", StreamButtonAction.Toggle("light.porch"))
+        val lamp = StreamButton("lamp", StreamButtonAction.CallService("light", "toggle", "light.porch"))
         val lampAgain = lamp.copy(id = "lamp-copy")
-        val override = StreamButton("gate", StreamButtonAction.Press("button.gate"), icon = "mdi:gate")
-        val hidden = StreamButton("hidden", StreamButtonAction.Toggle("switch.hidden"), visible = false)
+        val override = StreamButton(
+            "gate", StreamButtonAction.CallService("button", "press", "button.gate"), icon = "mdi:gate"
+        )
+        val hidden = StreamButton(
+            "hidden", StreamButtonAction.CallService("switch", "toggle", "switch.hidden"), visible = false
+        )
         val noIcon = StreamButton("reply", StreamButtonAction.QuickReply("select.reply"), entityIcon = "mdi:chat")
-        val failed = StreamButton("script", StreamButtonAction.RunScript("script.front"), entityIcon = "mdi:star")
+        val event = StreamButton("event", StreamButtonAction.FireEvent("doorbell_pressed"))
         val layout = StreamButtonLayout(
             top = listOf(lamp, override, hidden),
-            bottom = listOf(lampAgain, noIcon, failed)
+            bottom = listOf(lampAgain, noIcon, event)
         )
         every { appPreferences.streamButtonLayoutFlow } returns flowOf(layout)
         val response = CompletableDeferred<Result<String?>>()
         coEvery { repository.getEntityIcon("light.porch") } coAnswers { response.await() }
-        coEvery { repository.getEntityIcon("script.front") } returns Result.failure(IllegalStateException())
 
         viewModel.initializeConnection(context)
         runCurrent()
@@ -150,6 +151,7 @@ class StreamViewModelTest {
         coVerify(exactly = 1) { repository.getEntityIcon("light.porch") }
         coVerify(exactly = 0) { repository.getEntityIcon("button.gate") }
         coVerify(exactly = 0) { repository.getEntityIcon("switch.hidden") }
+        coVerify(exactly = 0) { repository.getEntityIcon("") }
 
         response.complete(Result.success("mdi:outdoor-lamp"))
         advanceUntilIdle()
@@ -206,10 +208,10 @@ class StreamViewModelTest {
 
     @Test
     fun `custom actions require the matching authentication request only when protected`() = runTest {
-        val toggle = StreamButton("light", StreamButtonAction.Toggle("light.porch"))
+        val toggle = StreamButton("light", StreamButtonAction.CallService("light", "toggle", "light.porch"))
         val press = StreamButton(
             id = "door",
-            action = StreamButtonAction.Press("button.door"),
+            action = StreamButtonAction.CallService("button", "press", "button.door"),
             requiresAuthentication = true
         )
         every { appPreferences.streamButtonLayoutFlow } returns
@@ -225,8 +227,8 @@ class StreamViewModelTest {
         viewModel.handleStreamButton(press)
         advanceUntilIdle()
 
-        coVerify(exactly = 1) { repository.callService("light", "toggle", "light.porch") }
-        coVerify(exactly = 0) { repository.callService("button", "press", "button.door") }
+        coVerify(exactly = 1) { repository.callService("light", "toggle", "light.porch", JsonObject(), false) }
+        coVerify(exactly = 0) { repository.callService("button", "press", "button.door", any(), any()) }
         val firstRequest = requests.single()
         assertEquals(press, firstRequest.button)
 
@@ -237,12 +239,12 @@ class StreamViewModelTest {
 
         viewModel.onStreamButtonAuthentication(firstRequest, true)
         advanceUntilIdle()
-        coVerify(exactly = 0) { repository.callService("button", "press", "button.door") }
+        coVerify(exactly = 0) { repository.callService("button", "press", "button.door", any(), any()) }
 
         viewModel.onStreamButtonAuthentication(secondRequest, true)
         viewModel.onStreamButtonAuthentication(secondRequest, true)
         advanceUntilIdle()
-        coVerify(exactly = 1) { repository.callService("button", "press", "button.door") }
+        coVerify(exactly = 1) { repository.callService("button", "press", "button.door", JsonObject(), false) }
     }
 
     @Test
@@ -501,9 +503,10 @@ class StreamViewModelTest {
 
     @Test
     fun `door action requests biometric authentication before opening`() = runTest {
-        val door = StreamButton("door", StreamButtonAction.OpenDoor("switch.door_relay", "switch.turn_on"))
+        val door = StreamButton(
+            "door", StreamButtonAction.CallService("switch", "turn_on", "switch.door_relay", doorRelease = true)
+        )
         every { appPreferences.streamButtonLayoutFlow } returns flowOf(StreamButtonLayout(bottom = listOf(door)))
-        coEvery { openDoorUseCase("switch.door_relay", "switch.turn_on") } returns Result.success(Unit)
         val requests = mutableListOf<UiEvent.AuthenticateStreamButton>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.uiEvent.collect { if (it is UiEvent.AuthenticateStreamButton) requests.add(it) }
@@ -514,12 +517,14 @@ class StreamViewModelTest {
         viewModel.handleStreamButton(door)
         advanceUntilIdle()
 
-        coVerify(exactly = 0) { openDoorUseCase(any(), any()) }
+        coVerify(exactly = 0) { repository.callService("switch", "turn_on", "switch.door_relay", any(), any()) }
         assertEquals(door, requests.single().button)
 
         viewModel.onStreamButtonAuthentication(requests.single(), true)
         advanceUntilIdle()
-        coVerify(exactly = 1) { openDoorUseCase("switch.door_relay", "switch.turn_on") }
+        coVerify(exactly = 1) {
+            repository.callService("switch", "turn_on", "switch.door_relay", JsonObject(), false)
+        }
     }
 
     @Test
@@ -562,10 +567,13 @@ class StreamViewModelTest {
     @Test
     fun `open door failures are reported using the entity name`() = runTest {
         val door = StreamButton(
-            "door", StreamButtonAction.OpenDoor("switch.door_relay"), entityName = "Side door"
+            "door",
+            StreamButtonAction.CallService("switch", "turn_on", "switch.door_relay", doorRelease = true),
+            entityName = "Side door"
         )
         every { appPreferences.streamButtonLayoutFlow } returns flowOf(StreamButtonLayout(bottom = listOf(door)))
-        coEvery { openDoorUseCase("switch.door_relay", "") } returns Result.failure(RuntimeException("relay offline"))
+        coEvery { repository.callService("switch", "turn_on", "switch.door_relay", JsonObject(), false) } returns
+            Result.failure(RuntimeException("relay offline"))
         every { context.getString(R.string.stream_button_failed, "Side door", "relay offline") } returns
             "Side door failed: relay offline"
         val events = mutableListOf<UiEvent>()

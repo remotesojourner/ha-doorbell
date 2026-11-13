@@ -1,8 +1,11 @@
 package com.novasoftware.hadoorbell.data.repository
 
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import com.novasoftware.hadoorbell.data.remote.DraftHomeAssistantConnection
 import com.novasoftware.hadoorbell.data.remote.EntityStateResponse
 import com.novasoftware.hadoorbell.data.remote.HomeAssistantApi
+import com.novasoftware.hadoorbell.data.remote.ServiceDomainResponse
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -82,6 +85,53 @@ class HomeAssistantRepositoryImplTest {
     }
 
     @Test
+    fun `service discovery reads the catalog from the draft connection`() = runTest {
+        val serviceData = JsonParser.parseString("""
+            {
+              "get_forecasts": {
+                "name": "Get forecasts",
+                "fields": {"type": {"required": true, "selector": {"select": {"options": ["daily"]}}}},
+                "target": {"entity": [{"domain": ["weather"]}]},
+                "response": {"optional": false}
+              }
+            }
+        """).asJsonObject
+        coEvery {
+            api.getServices(
+                "https://draft.home:8123/api/services".toHttpUrl(),
+                "Bearer draft_token",
+                DraftHomeAssistantConnection
+            )
+        } returns listOf(ServiceDomainResponse("weather", serviceData))
+
+        val service = repository.getServices("draft.home:8123", " draft_token ").getOrThrow().single()
+
+        assertEquals("weather", service.domain)
+        assertEquals("get_forecasts", service.service)
+        assertEquals("Get forecasts", service.name)
+        assertTrue(service.needsResponse)
+        assertTrue(service.fields.getValue("type").required)
+        assertTrue(service.fields.getValue("type").selector!!.has("select"))
+        assertTrue(service.target!!.has("entity"))
+    }
+
+    @Test
+    fun `service calls keep structured fields and add the selected entity to the payload`() = runTest {
+        val data = JsonObject().apply {
+            addProperty("temperature", 22)
+            addProperty("enabled", true)
+        }
+        val expected = data.deepCopy().apply { addProperty("entity_id", "climate.kitchen") }
+        coEvery { api.callService("climate", "set_temperature", expected, true) } returns Unit
+
+        repository.callService("climate", "set_temperature", "climate.kitchen", data, needsResponse = true)
+            .getOrThrow()
+
+        coVerify(exactly = 1) { api.callService("climate", "set_temperature", expected, true) }
+        assertTrue(!data.has("entity_id"))
+    }
+
+    @Test
     fun `getEntityState returns success when API call succeeds`() = runTest {
         coEvery { api.getEntityState(any()) } returns EntityStateResponse("lock.front_door", "locked", null)
         
@@ -104,7 +154,7 @@ class HomeAssistantRepositoryImplTest {
 
     @Test
     fun `callService returns success when API call succeeds`() = runTest {
-        coEvery { api.callService(any(), any(), any()) } returns Unit
+        coEvery { api.callService(any(), any(), any(), any()) } returns Unit
         
         val result = repository.callService("lock", "unlock", "lock.front_door")
         
@@ -114,7 +164,7 @@ class HomeAssistantRepositoryImplTest {
     @Test
     fun `callService returns failure when API call throws exception`() = runTest {
         val exception = RuntimeException("Service Error")
-        coEvery { api.callService(any(), any(), any()) } throws exception
+        coEvery { api.callService(any(), any(), any(), any()) } throws exception
         
         val result = repository.callService("lock", "unlock", "lock.front_door")
         

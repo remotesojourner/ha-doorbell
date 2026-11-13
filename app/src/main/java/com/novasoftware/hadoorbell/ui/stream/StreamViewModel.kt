@@ -13,7 +13,6 @@ import com.novasoftware.hadoorbell.domain.usecase.LockDoorUseCase
 import com.novasoftware.hadoorbell.domain.model.LockState
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
-import com.novasoftware.hadoorbell.domain.usecase.OpenDoorUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SendQuickReplyUseCase
 import com.novasoftware.hadoorbell.domain.usecase.UnlockDoorUseCase
 import com.novasoftware.hadoorbell.core.webrtc.WebRtcClientFactory
@@ -55,7 +54,6 @@ class StreamViewModel @Inject constructor(
     private val unlockDoorUseCase: UnlockDoorUseCase,
     private val getSelectOptionsUseCase: GetSelectOptionsUseCase,
     private val sendQuickReplyUseCase: SendQuickReplyUseCase,
-    private val openDoorUseCase: OpenDoorUseCase,
     private val callActionUseCase: CallActionUseCase,
     private val executeStreamButtonUseCase: ExecuteStreamButtonUseCase
 ) : ViewModel() {
@@ -115,6 +113,7 @@ class StreamViewModel @Inject constructor(
             visibleButtons.asSequence()
                 .filter { it.icon.isNullOrBlank() }
                 .map { it.action.entityId }
+                .filter(String::isNotBlank)
                 .distinct()
                 .forEach { entityId ->
                     launch {
@@ -335,8 +334,7 @@ class StreamViewModel @Inject constructor(
                 LockState.Unlocked, LockState.Unlocking -> executeLockAction(button, action.entityId, unlock = false)
                 else -> requestStreamButtonAuthentication(button)
             }
-            is StreamButtonAction.OpenDoor -> requestStreamButtonAuthentication(button)
-            else -> if (button.requiresAuthentication) {
+            else -> if (button.requiresAuthentication || action is StreamButtonAction.CallService && action.doorRelease) {
                 requestStreamButtonAuthentication(button)
             } else {
                 executeStreamButton(button)
@@ -380,11 +378,7 @@ class StreamViewModel @Inject constructor(
         _uiState.update { it.copy(runningStreamButtonIds = it.runningStreamButtonIds + button.id) }
         viewModelScope.launch {
             try {
-                val result = when (val action = button.action) {
-                    is StreamButtonAction.OpenDoor -> openDoorUseCase(action.entityId, action.service)
-                    else -> executeStreamButtonUseCase(action)
-                }
-                result.onFailure { showButtonFailure(button, it) }
+                executeStreamButtonUseCase(button.action).onFailure { showButtonFailure(button, it) }
             } finally {
                 _uiState.update { it.copy(runningStreamButtonIds = it.runningStreamButtonIds - button.id) }
             }
