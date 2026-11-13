@@ -2,6 +2,8 @@ package com.novasoftware.hadoorbell.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.JsonParseException
+import com.google.gson.JsonParser
 import com.novasoftware.hadoorbell.domain.model.Settings
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
@@ -20,6 +22,7 @@ import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import retrofit2.HttpException
+import java.util.Base64
 import javax.inject.Inject
 
 @HiltViewModel
@@ -67,6 +70,27 @@ class SettingsViewModel @Inject constructor(
 
     fun updateUrl(value: String) = updateConnection { it.copy(url = value) }
     fun updateToken(value: String) = updateConnection { it.copy(token = value) }
+
+    fun importTokenFromQr(contents: String): Boolean {
+        val token = contents.trim()
+        if (!looksLikeHomeAssistantToken(token)) return false
+        updateToken(token)
+        return true
+    }
+
+    private fun looksLikeHomeAssistantToken(token: String): Boolean {
+        if (!TOKEN_QR_PATTERN.matches(token)) return false
+        return try {
+            val header = Base64.getUrlDecoder().decode(token.substringBefore('.')).decodeToString()
+            val algorithm = JsonParser.parseString(header).takeIf { it.isJsonObject }
+                ?.asJsonObject?.get("alg")
+            algorithm?.isJsonPrimitive == true && algorithm.asString == "HS256"
+        } catch (_: IllegalArgumentException) {
+            false
+        } catch (_: JsonParseException) {
+            false
+        }
+    }
 
     private fun updateConnection(update: (SettingsUiState) -> SettingsUiState) {
         entityLoadJob?.cancel()
@@ -194,5 +218,10 @@ class SettingsViewModel @Inject constructor(
             savedSettings = settings
             onComplete()
         }
+    }
+
+    private companion object {
+        // Home Assistant encodes access tokens as compact, URL-safe JWTs.
+        val TOKEN_QR_PATTERN = Regex("[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+")
     }
 }

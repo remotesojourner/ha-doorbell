@@ -191,6 +191,24 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `scanning a token updates the draft without saving or connecting`() = runTest {
+        val exampleToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ0ZXN0In0.test-signature"
+
+        assertTrue(viewModel.importTokenFromQr("  $exampleToken\n"))
+        assertEquals(exampleToken, viewModel.uiState.value.token)
+        coVerify(exactly = 0) { saveSettingsUseCase(any()) }
+        coVerify(exactly = 0) { getHomeAssistantEntities(any(), any()) }
+    }
+
+    @Test
+    fun `an unrelated QR code leaves the current token intact`() {
+        for (contents in listOf("", "https://home.example.org", "www.example.org")) {
+            assertFalse(viewModel.importTokenFromQr(contents))
+        }
+        assertEquals("token123", viewModel.uiState.value.token)
+    }
+
+    @Test
     fun `disabling and restoring custom buttons preserves the layout and protected action`() = runTest {
         val door = StreamButton(
             id = "door",

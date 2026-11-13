@@ -105,6 +105,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.biometric)
+    implementation(libs.zxing.android.embedded)
 
     // DataStore Preferences
     implementation(libs.androidx.datastore.preferences)

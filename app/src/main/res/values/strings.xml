@@ -5,6 +5,9 @@
     <string name="settings_server_connection">Server Connection</string>
     <string name="settings_ha_url">Home Assistant URL</string>
     <string name="settings_ha_token">Long-Lived Access Token</string>
+    <string name="settings_scan_token">Scan access token QR code</string>
+    <string name="settings_token_scan_prompt">Point the camera at the Home Assistant access token QR code</string>
+    <string name="settings_invalid_token_qr">Scan the QR code for a Home Assistant long-lived access token.</string>
     <string name="settings_stream_config">Stream Configuration</string>
     <string name="settings_ha_integration">Home Assistant Integration</string>
     <string name="settings_stream_source_desc">Go2rtc stream name that supports 2 way audio</string>

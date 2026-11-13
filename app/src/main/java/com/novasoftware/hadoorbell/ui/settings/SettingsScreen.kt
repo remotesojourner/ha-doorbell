@@ -1,6 +1,8 @@
 package com.novasoftware.hadoorbell.ui.settings
 
+import android.content.pm.PackageManager
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -32,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -39,9 +43,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.core.utils.BiometricPromptHelper
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
@@ -59,6 +67,14 @@ fun SettingsScreen(
     if (!uiState.isLoaded) return
 
     val context = LocalContext.current
+    val hasCamera = remember(context) {
+        context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
+    }
+    var invalidTokenQr by rememberSaveable { mutableStateOf(false) }
+    val tokenScanPrompt = stringResource(R.string.settings_token_scan_prompt)
+    val scanToken = rememberLauncherForActivityResult(ScanContract()) { result ->
+        result.contents?.let { invalidTokenQr = !viewModel.importTokenFromQr(it) }
+    }
     val controlsAuthTitle = stringResource(R.string.settings_controls_auth_title)
     val controlsAuthSubtitle = stringResource(R.string.settings_controls_auth_subtitle)
     val controlsAuthError = stringResource(R.string.settings_controls_auth_error)
@@ -164,12 +180,37 @@ fun SettingsScreen(
 
                     OutlinedTextField(
                         value = uiState.token,
-                        onValueChange = { viewModel.updateToken(it) },
+                        onValueChange = {
+                            invalidTokenQr = false
+                            viewModel.updateToken(it)
+                        },
                         label = { Text(stringResource(R.string.settings_ha_token)) },
-                        leadingIcon = { Icon(Icons.Default.Key, contentDescription = "Token") },
+                        leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
+                        trailingIcon = if (hasCamera) {
+                            {
+                                IconButton(onClick = {
+                                    scanToken.launch(
+                                        ScanOptions()
+                                            .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                                            .setPrompt(tokenScanPrompt)
+                                            .setBeepEnabled(false)
+                                    )
+                                }) {
+                                    Icon(
+                                        Icons.Default.QrCodeScanner,
+                                        contentDescription = stringResource(R.string.settings_scan_token)
+                                    )
+                                }
+                            }
+                        } else null,
+                        isError = invalidTokenQr,
+                        supportingText = if (invalidTokenQr) {
+                            { Text(stringResource(R.string.settings_invalid_token_qr)) }
+                        } else null,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         visualTransformation = PasswordVisualTransformation()
                     )
 

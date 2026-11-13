@@ -38,7 +38,7 @@ This app directly hooks into Frigate or AlexxIT/WebRTC for 2-way audio support.
 When you first launch the app, you will be prompted for:
 
 1. **Home Assistant URL**: The local or remote URL to your Home Assistant instance that is accessible from the device (e.g., `https://192.168.1.100:8123`). **Note**: WebRTC strictly requires a secure HTTPS connection to function. Standard HTTP URLs will fail to establish a video/audio stream.
-2. **Long-Lived Access Token**: Generate this in your Home Assistant user profile.
+2. **Long-Lived Access Token**: Create a token under **Profile → Security → Long-Lived Access Tokens** in Home Assistant. Select **Generate QR code** in the token dialog, then tap the scanner icon beside the access token field in HA Doorbell. You can also paste the token directly.
 3. **go2rtc Stream Name**: The exact name of the camera stream as configured in go2rtc config (e.g., `front_door_camera`).
 
 ### Optional Integrations
