@@ -99,8 +99,8 @@ fun SettingsScreen(
                 onCryptoFailure = {
                     Toast.makeText(context, controlsAuthError, Toast.LENGTH_LONG).show()
                 },
-                onError = {
-                    Toast.makeText(context, controlsAuthError, Toast.LENGTH_LONG).show()
+                onError = { message ->
+                    message?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                 }
             )
         } else {

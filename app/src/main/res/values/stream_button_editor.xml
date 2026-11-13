@@ -35,8 +35,8 @@
     <string name="stream_button_quick_reply">Quick reply menu</string>
     <string name="stream_button_door_lock">Lock or unlock</string>
     <string name="stream_button_open_door">Open door</string>
-    <string name="stream_button_auth_to_unlock">Device authentication is required to unlock.</string>
-    <string name="stream_button_auth_to_open">Device authentication is required to open the door.</string>
+    <string name="stream_button_auth_to_unlock">If this device has a screen lock, it asks you to authenticate before unlocking.</string>
+    <string name="stream_button_auth_to_open">If this device has a screen lock, it asks you to authenticate before opening the door.</string>
     <string name="stream_button_door_service">Door service</string>
     <string name="stream_button_door_service_required">Enter a service for this entity.</string>
     <string name="stream_button_door_service_invalid">Use the domain.service format.</string>

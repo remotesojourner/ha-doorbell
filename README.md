@@ -45,7 +45,7 @@ When you first launch the app, you will be prompted for:
 
 Open **Doorbell Setup → Stream Buttons** to add, edit, or reorder up to three actions per row. Sound and Call stay at the start of the bottom row, which can hold five buttons in total.
 
-Choose an action and pick a Home Assistant entity by name or ID. Buttons can toggle an entity, press a button, choose a specific select option, run a script, or turn on a relay. **Quick Reply** opens a menu of replies. **Lock or Unlock** operates a lock, and **Open Door** calls the entity's default service or a `domain.service` you enter. Door opening and unlocking use device authentication.
+Choose an action and pick a Home Assistant entity by name or ID. Buttons can toggle an entity, press a button, choose a specific select option, run a script, or turn on a relay. **Quick Reply** opens a menu of replies. **Lock or Unlock** operates a lock, and **Open Door** calls the entity's default service or a `domain.service` you enter. Door opening and unlocking prompt for authentication when the device has a secure screen lock. On devices without a screen lock or enrolled biometrics, the two door controls run directly.
 
 Existing door, lock, and quick reply settings move into the button list when you update. Tap **Call** in the list to set optional Answer and Hang Up services or start two-way audio immediately. With a Quick Reply button configured, the stream starts in listen-only mode so replies can play.
 

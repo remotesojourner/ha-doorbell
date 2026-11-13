@@ -108,7 +108,7 @@ fun StreamScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val topButtons = uiState.streamButtonLayout.top.filter(StreamButton::visible)
 
-    val streamAuthBypassedText = stringResource(R.string.stream_auth_bypassed)
+    val authFailedText = stringResource(R.string.authentication_unavailable)
     val resources by rememberUpdatedState(LocalResources.current)
 
     // Collect one-shot UI events
@@ -135,12 +135,17 @@ fun StreamScreen(
                             if (action is StreamButtonAction.DoorLock) R.string.stream_authenticate_unlock
                             else R.string.stream_button_auth_subtitle
                         ),
+                        allowWithoutScreenLock = action is StreamButtonAction.DoorLock ||
+                            action is StreamButtonAction.OpenDoor,
                         onSuccess = { viewModel.onStreamButtonAuthentication(event, true) },
                         onCryptoFailure = {
                             viewModel.onStreamButtonAuthentication(event, false)
-                            Toast.makeText(context, streamAuthBypassedText, Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, authFailedText, Toast.LENGTH_LONG).show()
                         },
-                        onError = { viewModel.onStreamButtonAuthentication(event, false) }
+                        onError = { message ->
+                            viewModel.onStreamButtonAuthentication(event, false)
+                            message?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                        }
                     )
                 }
             }

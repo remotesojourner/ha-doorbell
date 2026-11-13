@@ -143,7 +143,8 @@ class StreamButtonEditorTest {
 
         composeTestRule.onNodeWithText("Door release").performScrollTo().performClick()
         composeTestRule.onNodeWithText("Door service").assertExists()
-        composeTestRule.onNodeWithText("Device authentication is required to open the door.").assertExists()
+        composeTestRule.onNodeWithText("If this device has a screen lock, it asks you to authenticate before opening the door.")
+            .assertExists()
         composeTestRule.onNodeWithText("Button label").performScrollTo().performTextReplacement("Open side door")
         composeTestRule.onNodeWithText("Done").performClick()
 
