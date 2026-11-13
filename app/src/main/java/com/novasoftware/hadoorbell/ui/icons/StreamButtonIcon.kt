@@ -5,6 +5,18 @@ import android.graphics.Paint
 import android.graphics.Rect
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.QuestionMark
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.ToggleOn
+import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -13,12 +25,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.res.ResourcesCompat
 import com.novasoftware.hadoorbell.R
+import com.novasoftware.hadoorbell.domain.model.LockState
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 
@@ -97,6 +111,26 @@ internal fun defaultHomeAssistantIcon(entityId: String): String? = when (entityI
     "switch" -> "toggle-switch"
     "valve" -> "valve"
     else -> null
+}
+
+internal fun streamButtonFallbackIcon(
+    action: StreamButtonAction,
+    lockState: LockState = LockState.Locked
+): ImageVector = when (action) {
+    is StreamButtonAction.Toggle -> Icons.Default.ToggleOn
+    is StreamButtonAction.Press -> Icons.Default.TouchApp
+    is StreamButtonAction.SelectOption -> Icons.AutoMirrored.Filled.List
+    is StreamButtonAction.RunScript -> Icons.Default.PlayArrow
+    is StreamButtonAction.TurnOn -> Icons.Default.PowerSettingsNew
+    is StreamButtonAction.QuickReply -> Icons.AutoMirrored.Filled.Chat
+    is StreamButtonAction.OpenDoor -> Icons.Default.LockOpen
+    is StreamButtonAction.DoorLock -> when (lockState) {
+        LockState.Locked -> Icons.Default.Lock
+        LockState.Unlocked -> Icons.Default.LockOpen
+        LockState.Locking, LockState.Unlocking -> Icons.Default.Sync
+        LockState.Jammed -> Icons.Default.Warning
+        LockState.Unknown -> Icons.Default.QuestionMark
+    }
 }
 
 @Composable

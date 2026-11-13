@@ -166,8 +166,7 @@ class StreamButtonEditorTest {
 
         composeTestRule.onNodeWithContentDescription("Options for Gate relay").performScrollTo().performClick()
         composeTestRule.onNodeWithText("Move to bottom row").performClick()
-        composeTestRule.onNodeWithContentDescription("Options for Gate relay").performScrollTo().performClick()
-        composeTestRule.onNodeWithText("Move up").performClick()
+        composeTestRule.onNodeWithContentDescription("Move Gate relay up").performScrollTo().performClick()
 
         composeTestRule.runOnIdle {
             assertEquals(listOf(light), layout.top)

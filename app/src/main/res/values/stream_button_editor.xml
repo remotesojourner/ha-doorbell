@@ -9,8 +9,8 @@
     <string name="stream_button_add">Add stream button</string>
     <string name="stream_button_edit">Edit stream button</string>
     <string name="stream_button_menu">Options for %1$s</string>
-    <string name="stream_button_move_up">Move up</string>
-    <string name="stream_button_move_down">Move down</string>
+    <string name="stream_button_move_up">Move %1$s up</string>
+    <string name="stream_button_move_down">Move %1$s down</string>
     <string name="stream_button_move_top">Move to top row</string>
     <string name="stream_button_move_bottom">Move to bottom row</string>
     <string name="stream_button_remove">Remove button</string>

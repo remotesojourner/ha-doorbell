@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -20,6 +21,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
@@ -40,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -63,6 +67,8 @@ import com.novasoftware.hadoorbell.domain.usecase.OpenDoorUseCase
 import com.novasoftware.hadoorbell.ui.icons.StreamButtonIcon
 import com.novasoftware.hadoorbell.ui.icons.defaultHomeAssistantIcon
 import com.novasoftware.hadoorbell.ui.icons.rememberStreamButtonIconChoices
+import com.novasoftware.hadoorbell.ui.icons.resolveStreamButtonIcon
+import com.novasoftware.hadoorbell.ui.icons.streamButtonFallbackIcon
 import java.util.UUID
 
 @Composable
@@ -99,34 +105,36 @@ internal fun StreamButtonEditor(
                 )
             }
             buttons.forEachIndexed { index, button ->
-                val openEditor = {
-                    editingRow = row
-                    editingId = button.id
+                key(button.id) {
+                    StreamButtonListItem(
+                        button = button,
+                        entity = entities.find { it.entityId == button.action.entityId },
+                        onEdit = {
+                            editingRow = row
+                            editingId = button.id
+                        },
+                        onMoveUp = if (index > 0) {
+                            { onLayoutChange(row.replace(layout, buttons.move(index, index - 1))) }
+                        } else null,
+                        onMoveDown = if (index < buttons.lastIndex) {
+                            { onLayoutChange(row.replace(layout, buttons.move(index, index + 1))) }
+                        } else null,
+                        moveToOtherRowLabel = stringResource(otherRow.moveHere),
+                        onMoveToOtherRow = if (otherButtons.size < StreamButtonLayout.MAX_BUTTONS_PER_ROW) {
+                            {
+                                val updated = row.replace(layout, buttons - button)
+                                onLayoutChange(otherRow.replace(updated, otherButtons + button))
+                            }
+                        } else null,
+                        onToggleVisibility = {
+                            val updated = buttons.map {
+                                if (it.id == button.id) it.copy(visible = !it.visible) else it
+                            }
+                            onLayoutChange(row.replace(layout, updated))
+                        },
+                        onRemove = { onLayoutChange(row.replace(layout, buttons - button)) }
+                    )
                 }
-                StreamButtonListItem(
-                    button = button,
-                    onEdit = openEditor,
-                    onMoveUp = if (index > 0) {
-                        { onLayoutChange(row.replace(layout, buttons.move(index, index - 1))) }
-                    } else null,
-                    onMoveDown = if (index < buttons.lastIndex) {
-                        { onLayoutChange(row.replace(layout, buttons.move(index, index + 1))) }
-                    } else null,
-                    moveToOtherRowLabel = stringResource(otherRow.moveHere),
-                    onMoveToOtherRow = if (otherButtons.size < StreamButtonLayout.MAX_BUTTONS_PER_ROW) {
-                        {
-                            val updated = row.replace(layout, buttons - button)
-                            onLayoutChange(otherRow.replace(updated, otherButtons + button))
-                        }
-                    } else null,
-                    onToggleVisibility = {
-                        val updated = buttons.map {
-                            if (it.id == button.id) it.copy(visible = !it.visible) else it
-                        }
-                        onLayoutChange(row.replace(layout, updated))
-                    },
-                    onRemove = { onLayoutChange(row.replace(layout, buttons - button)) }
-                )
             }
             if (buttons.size < StreamButtonLayout.MAX_BUTTONS_PER_ROW) {
                 TextButton(
@@ -186,6 +194,7 @@ private fun FixedButton(label: String, icon: ImageVector, onEdit: (() -> Unit)? 
 @Composable
 private fun StreamButtonListItem(
     button: StreamButton,
+    entity: HomeAssistantEntity?,
     onEdit: () -> Unit,
     onMoveUp: (() -> Unit)?,
     onMoveDown: (() -> Unit)?,
@@ -203,9 +212,22 @@ private fun StreamButtonListItem(
     }
     val actionSummary = details?.let { stringResource(R.string.stream_button_action_summary, actionLabel, it) }
         ?: actionLabel
+    val icon = resolveStreamButtonIcon(button, entity?.icon, hasCurrentEntityIcon = entity != null)
     ListItem(
         headlineContent = {
-            Text(button.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(button.displayName, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (actionKind.requiresAuthentication || button.requiresAuthentication) {
+                    Icon(
+                        Icons.Default.Lock,
+                        contentDescription = stringResource(R.string.stream_button_require_auth),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
         },
         supportingContent = {
             Column {
@@ -217,65 +239,64 @@ private fun StreamButtonListItem(
                 if (!button.visible) Text(stringResource(R.string.stream_button_hidden))
             }
         },
-        leadingContent = if (actionKind.requiresAuthentication || button.requiresAuthentication) {
-            {
-                Icon(
-                    Icons.Default.Lock,
-                    contentDescription = stringResource(R.string.stream_button_require_auth)
-                )
+        leadingContent = {
+            if (icon == null) {
+                Icon(streamButtonFallbackIcon(button.action), contentDescription = null)
+            } else {
+                StreamButtonIcon(icon, contentDescription = null)
             }
-        } else null,
+        },
         trailingContent = {
-            Box {
-                IconButton(onClick = { menuOpen = true }) {
-                    Icon(
-                        Icons.Default.MoreVert,
-                        contentDescription = stringResource(R.string.stream_button_menu, button.displayName)
-                    )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    IconButton(enabled = onMoveUp != null, onClick = { onMoveUp?.invoke() }) {
+                        Icon(
+                            Icons.Default.KeyboardArrowUp,
+                            contentDescription = stringResource(R.string.stream_button_move_up, button.displayName)
+                        )
+                    }
+                    IconButton(enabled = onMoveDown != null, onClick = { onMoveDown?.invoke() }) {
+                        Icon(
+                            Icons.Default.KeyboardArrowDown,
+                            contentDescription = stringResource(R.string.stream_button_move_down, button.displayName)
+                        )
+                    }
                 }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.stream_button_move_up)) },
-                        enabled = onMoveUp != null,
-                        onClick = {
-                            menuOpen = false
-                            onMoveUp?.invoke()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.stream_button_move_down)) },
-                        enabled = onMoveDown != null,
-                        onClick = {
-                            menuOpen = false
-                            onMoveDown?.invoke()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(moveToOtherRowLabel) },
-                        enabled = onMoveToOtherRow != null,
-                        onClick = {
-                            menuOpen = false
-                            onMoveToOtherRow?.invoke()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = {
-                            Text(stringResource(
-                                if (button.visible) R.string.stream_button_hide else R.string.stream_button_show
-                            ))
-                        },
-                        onClick = {
-                            menuOpen = false
-                            onToggleVisibility()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.stream_button_remove)) },
-                        onClick = {
-                            menuOpen = false
-                            onRemove()
-                        }
-                    )
+                Box {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription = stringResource(R.string.stream_button_menu, button.displayName)
+                        )
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text(moveToOtherRowLabel) },
+                            enabled = onMoveToOtherRow != null,
+                            onClick = {
+                                menuOpen = false
+                                onMoveToOtherRow?.invoke()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(stringResource(
+                                    if (button.visible) R.string.stream_button_hide else R.string.stream_button_show
+                                ))
+                            },
+                            onClick = {
+                                menuOpen = false
+                                onToggleVisibility()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.stream_button_remove)) },
+                            onClick = {
+                                menuOpen = false
+                                onRemove()
+                            }
+                        )
+                    }
                 }
             }
         },

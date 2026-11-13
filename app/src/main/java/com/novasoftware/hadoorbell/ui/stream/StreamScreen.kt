@@ -27,24 +27,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PowerSettingsNew
-import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.ToggleOn
-import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -89,6 +78,7 @@ import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.ui.icons.StreamButtonIcon
 import com.novasoftware.hadoorbell.ui.icons.resolveStreamButtonIcon
+import com.novasoftware.hadoorbell.ui.icons.streamButtonFallbackIcon
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 
@@ -515,22 +505,7 @@ private fun StreamActionButton(
     iconSize: Dp
 ) {
     val isLock = button.action is StreamButtonAction.DoorLock
-    val fallbackIcon = when (button.action) {
-        is StreamButtonAction.Toggle -> Icons.Default.ToggleOn
-        is StreamButtonAction.Press -> Icons.Default.TouchApp
-        is StreamButtonAction.SelectOption -> Icons.AutoMirrored.Filled.List
-        is StreamButtonAction.RunScript -> Icons.Default.PlayArrow
-        is StreamButtonAction.TurnOn -> Icons.Default.PowerSettingsNew
-        is StreamButtonAction.QuickReply -> Icons.AutoMirrored.Filled.Chat
-        is StreamButtonAction.OpenDoor -> Icons.Default.LockOpen
-        is StreamButtonAction.DoorLock -> when (lockState) {
-            LockState.Locked -> Icons.Default.Lock
-            LockState.Unlocked -> Icons.Default.LockOpen
-            LockState.Locking, LockState.Unlocking -> Icons.Default.Sync
-            LockState.Jammed -> Icons.Default.Warning
-            LockState.Unknown -> Icons.Default.QuestionMark
-        }
-    }
+    val fallbackIcon = streamButtonFallbackIcon(button.action, lockState)
     val lockDescription = if (isLock) stringResource(
         when (lockState) {
             LockState.Locked -> R.string.stream_lock_locked
