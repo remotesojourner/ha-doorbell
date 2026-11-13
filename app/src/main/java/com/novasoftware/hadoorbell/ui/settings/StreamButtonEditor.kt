@@ -111,6 +111,12 @@ internal fun StreamButtonEditor(
                             onLayoutChange(otherRow.replace(updated, otherButtons + button))
                         }
                     } else null,
+                    onToggleVisibility = {
+                        val updated = buttons.map {
+                            if (it.id == button.id) it.copy(visible = !it.visible) else it
+                        }
+                        onLayoutChange(row.replace(layout, updated))
+                    },
                     onRemove = { onLayoutChange(row.replace(layout, buttons - button)) }
                 )
             }
@@ -177,6 +183,7 @@ private fun StreamButtonListItem(
     onMoveDown: (() -> Unit)?,
     moveToOtherRowLabel: String,
     onMoveToOtherRow: (() -> Unit)?,
+    onToggleVisibility: () -> Unit,
     onRemove: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -191,11 +198,14 @@ private fun StreamButtonListItem(
             Text(button.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         supportingContent = {
-            Text(
-                stringResource(R.string.stream_button_action_summary, actionLabel, details),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Column {
+                Text(
+                    stringResource(R.string.stream_button_action_summary, actionLabel, details),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (!button.visible) Text(stringResource(R.string.stream_button_hidden))
+            }
         },
         leadingContent = if (actionKind.requiresAuthentication || button.requiresAuthentication) {
             {
@@ -236,6 +246,17 @@ private fun StreamButtonListItem(
                         onClick = {
                             menuOpen = false
                             onMoveToOtherRow?.invoke()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(stringResource(
+                                if (button.visible) R.string.stream_button_hide else R.string.stream_button_show
+                            ))
+                        },
+                        onClick = {
+                            menuOpen = false
+                            onToggleVisibility()
                         }
                     )
                     DropdownMenuItem(
@@ -473,7 +494,8 @@ private fun EditStreamButtonDialog(
                                 id = existing?.id ?: UUID.randomUUID().toString(),
                                 label = label.trim(),
                                 action = action,
-                                requiresAuthentication = kind.requiresAuthentication || requiresAuthentication
+                                requiresAuthentication = kind.requiresAuthentication || requiresAuthentication,
+                                visible = existing?.visible ?: true
                             )
                         )
                     }

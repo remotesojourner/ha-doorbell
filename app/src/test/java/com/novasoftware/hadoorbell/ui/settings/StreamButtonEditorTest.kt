@@ -122,7 +122,8 @@ class StreamButtonEditorTest {
             "legacy-door",
             "Door release",
             StreamButtonAction.OpenDoor("switch.door_relay", "switch.turn_on"),
-            requiresAuthentication = true
+            requiresAuthentication = true,
+            visible = false
         )
         var layout by mutableStateOf(StreamButtonLayout(bottom = listOf(door)))
         composeTestRule.setContent {
@@ -146,8 +147,17 @@ class StreamButtonEditorTest {
         composeTestRule.onNodeWithText("Button label").performScrollTo().performTextReplacement("Open side door")
         composeTestRule.onNodeWithText("Done").performClick()
 
+        composeTestRule.onNodeWithText("Hidden on stream").assertExists()
         composeTestRule.runOnIdle {
             assertEquals(door.copy(label = "Open side door"), layout.bottom.single())
+        }
+
+        composeTestRule.onNodeWithContentDescription("Options for Open side door")
+            .performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Show on stream").performClick()
+        composeTestRule.onNodeWithText("Hidden on stream").assertDoesNotExist()
+        composeTestRule.runOnIdle {
+            assertEquals(door.copy(label = "Open side door", visible = true), layout.bottom.single())
         }
     }
 }

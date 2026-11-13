@@ -4,7 +4,8 @@ data class StreamButton(
     val id: String,
     val label: String,
     val action: StreamButtonAction,
-    val requiresAuthentication: Boolean = false
+    val requiresAuthentication: Boolean = false,
+    val visible: Boolean = true
 )
 
 data class StreamButtonLayout(
@@ -12,7 +13,7 @@ data class StreamButtonLayout(
     val bottom: List<StreamButton> = emptyList()
 ) {
     val buttons: List<StreamButton> get() = top + bottom
-    val hasQuickReply: Boolean get() = buttons.any { it.action is StreamButtonAction.QuickReply }
+    val hasQuickReply: Boolean get() = buttons.any { it.visible && it.action is StreamButtonAction.QuickReply }
 
     init {
         require(top.size <= MAX_BUTTONS_PER_ROW && bottom.size <= MAX_BUTTONS_PER_ROW) {

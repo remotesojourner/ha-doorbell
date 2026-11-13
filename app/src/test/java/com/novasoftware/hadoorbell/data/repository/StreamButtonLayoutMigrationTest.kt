@@ -2,6 +2,7 @@ package com.novasoftware.hadoorbell.data.repository
 
 import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.google.gson.JsonParser
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
@@ -20,7 +21,7 @@ class StreamButtonLayoutMigrationTest {
     private val answerServiceKey = stringPreferencesKey("answer_action_service")
 
     @Test
-    fun `migrates all existing controls into bottom and preserves service and auth settings`() = runTest {
+    fun `migrates all existing controls and keeps the previously hidden lock out of the live row`() = runTest {
         val previous = preferencesOf(
             quickReplyKey to " select.reply ",
             doorEntityKey to " switch.door ",
@@ -37,7 +38,8 @@ class StreamButtonLayoutMigrationTest {
             StreamButtonLayout(bottom = listOf(
                 StreamButton("legacy-quick-reply", "Quick Reply", StreamButtonAction.QuickReply("select.reply")),
                 StreamButton("legacy-open-door", "Open Door", StreamButtonAction.OpenDoor("switch.door", "switch.turn_on"), true),
-                StreamButton("legacy-door-lock", "Door Lock", StreamButtonAction.DoorLock("lock.entry"), true)
+                StreamButton("legacy-door-lock", "Door Lock", StreamButtonAction.DoorLock("lock.entry"),
+                    requiresAuthentication = true, visible = false)
             )),
             layout
         )
@@ -70,6 +72,7 @@ class StreamButtonLayoutMigrationTest {
             listOf(StreamButtonAction.QuickReply("select.reply"), StreamButtonAction.DoorLock("lock.entry")),
             result.top.map(StreamButton::action)
         )
+        assertFalse(result.top.last().visible)
         assertFalse(doorEntityKey in migrated)
         assertFalse(migration.shouldMigrate(migrated))
     }
@@ -95,9 +98,54 @@ class StreamButtonLayoutMigrationTest {
             listOf(StreamButtonAction.OpenDoor("switch.door"), StreamButtonAction.DoorLock("lock.entry"), firstDraft.action),
             layout.bottom.map(StreamButton::action)
         )
+        assertFalse(layout.bottom[1].visible)
         assertFalse(migration.shouldMigrate(migrated))
     }
 
+    @Test
+    fun `earlier untouched migration restores the hidden lock in a single pass`() = runTest {
+        val door = StreamButton("legacy-open-door", "Open Door", StreamButtonAction.OpenDoor("switch.door"), true)
+        val lock = StreamButton("legacy-door-lock", "Door Lock", StreamButtonAction.DoorLock("lock.entry"), true)
+        val reply = StreamButton("legacy-quick-reply", "Quick Reply", StreamButtonAction.QuickReply("select.reply"))
+        val layout = StreamButtonLayout(bottom = listOf(reply, door, lock))
+        val previous = preferencesOf(STREAM_BUTTON_LAYOUT to layout.withoutVisibilityMarker())
+
+        assertTrue(migration.shouldMigrate(previous))
+        val migrated = migration.migrate(previous)
+
+        assertEquals(
+            layout.copy(bottom = listOf(reply, door, lock.copy(visible = false))),
+            StreamButtonLayoutJson.decode(checkNotNull(migrated[STREAM_BUTTON_LAYOUT]))
+        )
+        assertFalse(migration.shouldMigrate(migrated))
+    }
+
+    @Test
+    fun `earlier layouts with renamed or moved migrated controls keep their chosen visibility`() = runTest {
+        val door = StreamButton("legacy-open-door", "Open Door", StreamButtonAction.OpenDoor("switch.door"), true)
+        val lock = StreamButton("legacy-door-lock", "Door Lock", StreamButtonAction.DoorLock("lock.entry"), true)
+        val editedLayouts = listOf(
+            StreamButtonLayout(bottom = listOf(door, lock.copy(label = "Garage lock"))),
+            StreamButtonLayout(bottom = listOf(lock, door)),
+            StreamButtonLayout(top = listOf(lock), bottom = listOf(door))
+        )
+        for (layout in editedLayouts) {
+            val previous = preferencesOf(STREAM_BUTTON_LAYOUT to layout.withoutVisibilityMarker())
+            val migrated = migration.migrate(previous)
+
+            assertEquals(layout, StreamButtonLayoutJson.decode(checkNotNull(migrated[STREAM_BUTTON_LAYOUT])))
+            assertFalse(migration.shouldMigrate(migrated))
+        }
+    }
+
     private fun StreamButtonLayout.withPreviousEnabledFlag(enabled: Boolean): String =
-        """{"enabled":$enabled,${StreamButtonLayoutJson.encode(this).removePrefix("{")}"""
+        """{"enabled":$enabled,${withoutVisibilityMarker().removePrefix("{")}"""
+
+    private fun StreamButtonLayout.withoutVisibilityMarker(): String =
+        JsonParser.parseString(StreamButtonLayoutJson.encode(this)).asJsonObject.apply {
+            remove("buttonVisibility")
+            for (row in listOf("top", "bottom")) {
+                getAsJsonArray(row).forEach { it.asJsonObject.remove("visible") }
+            }
+        }.toString()
 }

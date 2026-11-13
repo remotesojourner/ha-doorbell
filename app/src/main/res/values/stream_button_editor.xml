@@ -14,6 +14,9 @@
     <string name="stream_button_move_top">Move to top row</string>
     <string name="stream_button_move_bottom">Move to bottom row</string>
     <string name="stream_button_remove">Remove button</string>
+    <string name="stream_button_hidden">Hidden on stream</string>
+    <string name="stream_button_hide">Hide from stream</string>
+    <string name="stream_button_show">Show on stream</string>
     <string name="stream_button_action">Action</string>
     <string name="stream_button_action_summary">%1$s · %2$s</string>
     <string name="stream_button_label">Button label</string>

@@ -9,6 +9,7 @@ import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 
 internal object StreamButtonLayoutJson {
     fun encode(layout: StreamButtonLayout): String = JsonObject().apply {
+        addProperty("buttonVisibility", true)
         add("top", encodeRow(layout.top))
         add("bottom", encodeRow(layout.bottom))
     }.toString()
@@ -26,12 +27,17 @@ internal object StreamButtonLayoutJson {
         if (layout.has("enabled")) layout.boolean("enabled") else null
     }.getOrNull()
 
+    fun hasVisibilityMarker(json: String): Boolean = runCatching {
+        JsonParser.parseString(json).asJsonObject.has("buttonVisibility")
+    }.getOrDefault(false)
+
     private fun encodeRow(buttons: List<StreamButton>): JsonArray = JsonArray().apply {
         for (button in buttons) {
             add(JsonObject().apply {
                 addProperty("id", button.id)
                 addProperty("label", button.label)
                 addProperty("requiresAuthentication", button.requiresAuthentication)
+                addProperty("visible", button.visible)
                 add("action", encodeAction(button.action))
             })
         }
@@ -67,7 +73,8 @@ internal object StreamButtonLayoutJson {
             id = button.string("id"),
             label = button.string("label"),
             action = decodeAction(button.getAsJsonObject("action")),
-            requiresAuthentication = button.boolean("requiresAuthentication")
+            requiresAuthentication = button.boolean("requiresAuthentication"),
+            visible = if (button.has("visible")) button.boolean("visible") else true
         )
     }
 

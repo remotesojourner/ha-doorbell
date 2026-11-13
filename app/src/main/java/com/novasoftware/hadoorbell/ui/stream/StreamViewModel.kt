@@ -110,7 +110,8 @@ class StreamViewModel @Inject constructor(
             val manager = webRtcManagerFactory.create(context, signalingClient, viewModelScope)
             _uiState.update { it.copy(webRtcManager = manager) }
 
-            layout.buttons.mapNotNull { (it.action as? StreamButtonAction.DoorLock)?.entityId }
+            layout.buttons.filter(StreamButton::visible)
+                .mapNotNull { (it.action as? StreamButtonAction.DoorLock)?.entityId }
                 .distinct()
                 .forEach { entityId ->
                     launch {
@@ -349,7 +350,7 @@ class StreamViewModel @Inject constructor(
     }
 
     private fun isConfiguredButton(button: StreamButton): Boolean {
-        return button in _uiState.value.streamButtonLayout.buttons
+        return button.visible && button in _uiState.value.streamButtonLayout.buttons
     }
 
     private fun executeStreamButton(button: StreamButton) {
