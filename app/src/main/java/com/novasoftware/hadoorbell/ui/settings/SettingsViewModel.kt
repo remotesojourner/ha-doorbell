@@ -23,6 +23,11 @@ class SettingsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
+    private var savedAnswerActionService = ""
+    private var savedAnswerActionEntityId = ""
+    private var savedHangupActionService = ""
+    private var savedHangupActionEntityId = ""
+
     init {
         loadSettings()
     }
@@ -30,6 +35,10 @@ class SettingsViewModel @Inject constructor(
     private fun loadSettings() {
         viewModelScope.launch {
             val settings = getSettingsUseCase().first()
+            savedAnswerActionService = settings.answerActionService
+            savedAnswerActionEntityId = settings.answerActionEntityId
+            savedHangupActionService = settings.hangupActionService
+            savedHangupActionEntityId = settings.hangupActionEntityId
             _uiState.update {
                 it.copy(
                     url = settings.url,
@@ -39,6 +48,12 @@ class SettingsViewModel @Inject constructor(
                     lockEntityId = settings.lockEntityId,
                     instantTwoWayAudio = settings.instantTwoWayAudio,
                     webrtcProvider = settings.webrtcProvider,
+                    doorEntityId = settings.doorEntityId,
+                    doorService = settings.doorService,
+                    answerActionService = settings.answerActionService,
+                    answerActionEntityId = settings.answerActionEntityId,
+                    hangupActionService = settings.hangupActionService,
+                    hangupActionEntityId = settings.hangupActionEntityId,
                     isLoaded = true
                 )
             }
@@ -59,6 +74,20 @@ class SettingsViewModel @Inject constructor(
     fun updateLockEntityId(value: String) { _uiState.update { it.copy(lockEntityId = value) } }
     fun updateInstantTwoWayAudio(value: Boolean) { _uiState.update { it.copy(instantTwoWayAudio = value) } }
     fun updateWebrtcProvider(value: String) { _uiState.update { it.copy(webrtcProvider = value) } }
+    fun updateDoorEntityId(value: String) { _uiState.update { it.copy(doorEntityId = value) } }
+    fun updateDoorService(value: String) { _uiState.update { it.copy(doorService = value) } }
+    fun updateAnswerActionService(value: String) { _uiState.update { it.copy(answerActionService = value) } }
+    fun updateAnswerActionEntityId(value: String) { _uiState.update { it.copy(answerActionEntityId = value) } }
+    fun updateHangupActionService(value: String) { _uiState.update { it.copy(hangupActionService = value) } }
+    fun updateHangupActionEntityId(value: String) { _uiState.update { it.copy(hangupActionEntityId = value) } }
+
+    fun callActionsChanged(): Boolean {
+        val currentState = _uiState.value
+        return currentState.answerActionService != savedAnswerActionService ||
+            currentState.answerActionEntityId != savedAnswerActionEntityId ||
+            currentState.hangupActionService != savedHangupActionService ||
+            currentState.hangupActionEntityId != savedHangupActionEntityId
+    }
 
     fun saveSettings(onComplete: () -> Unit) {
         viewModelScope.launch {
@@ -70,9 +99,19 @@ class SettingsViewModel @Inject constructor(
                 quickReplyEntityId = currentState.quickReplyEntityId,
                 lockEntityId = currentState.lockEntityId,
                 instantTwoWayAudio = currentState.instantTwoWayAudio,
-                webrtcProvider = currentState.webrtcProvider
+                webrtcProvider = currentState.webrtcProvider,
+                doorEntityId = currentState.doorEntityId,
+                doorService = currentState.doorService,
+                answerActionService = currentState.answerActionService,
+                answerActionEntityId = currentState.answerActionEntityId,
+                hangupActionService = currentState.hangupActionService,
+                hangupActionEntityId = currentState.hangupActionEntityId
             )
             saveSettingsUseCase(settings)
+            savedAnswerActionService = settings.answerActionService
+            savedAnswerActionEntityId = settings.answerActionEntityId
+            savedHangupActionService = settings.hangupActionService
+            savedHangupActionEntityId = settings.hangupActionEntityId
             onComplete()
         }
     }

@@ -17,7 +17,13 @@ class GetSettingsUseCase @Inject constructor(
             repository.quickReplyEntityIdFlow,
             repository.lockEntityIdFlow,
             repository.instantTwoWayAudioFlow,
-            repository.webrtcProviderFlow
+            repository.webrtcProviderFlow,
+            repository.doorEntityIdFlow,
+            repository.doorServiceFlow,
+            repository.answerActionServiceFlow,
+            repository.answerActionEntityIdFlow,
+            repository.hangupActionServiceFlow,
+            repository.hangupActionEntityIdFlow
         ) { args: Array<Any?> ->
             Settings(
                 url = args[0] as? String ?: "",
@@ -26,7 +32,13 @@ class GetSettingsUseCase @Inject constructor(
                 quickReplyEntityId = args[3] as? String ?: "",
                 lockEntityId = args[4] as? String ?: "",
                 instantTwoWayAudio = args[5] as? Boolean ?: false,
-                webrtcProvider = args[6] as? String ?: "frigate"
+                webrtcProvider = args[6] as? String ?: "frigate",
+                doorEntityId = args[7] as? String ?: "",
+                doorService = args[8] as? String ?: "",
+                answerActionService = args[9] as? String ?: "",
+                answerActionEntityId = args[10] as? String ?: "",
+                hangupActionService = args[11] as? String ?: "",
+                hangupActionEntityId = args[12] as? String ?: ""
             )
         }
     }

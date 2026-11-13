@@ -67,12 +67,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novasoftware.hadoorbell.R
+import com.novasoftware.hadoorbell.core.utils.BiometricPromptHelper
 import com.novasoftware.hadoorbell.domain.model.LockState
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
@@ -106,45 +106,21 @@ fun StreamScreen(
                     ).show()
                 }
                 is UiEvent.RequestBiometricAuth -> {
-                    val fragmentActivity = context as? FragmentActivity
-                    if (fragmentActivity != null) {
-                        val executor = androidx.core.content.ContextCompat.getMainExecutor(fragmentActivity)
-                        val cryptoObject = com.novasoftware.hadoorbell.core.utils.BiometricHelper.getCryptoObject()
-
-                        val promptInfoBuilder = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
-                            .setTitle(streamUnlockDoorText)
-                            .setSubtitle(streamAuthenticateUnlockText)
-
-                        if (cryptoObject != null) {
-                            promptInfoBuilder.setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG)
-                        } else {
-                            promptInfoBuilder.setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK or androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                    BiometricPromptHelper.authenticate(
+                        context = context,
+                        title = streamUnlockDoorText,
+                        subtitle = streamAuthenticateUnlockText,
+                        onSuccess = {
+                            if (event.forDoor) {
+                                viewModel.executeOpenDoor()
+                            } else {
+                                viewModel.executeUnlockDoor()
+                            }
+                        },
+                        onCryptoFailure = {
+                            Toast.makeText(context, streamAuthBypassedText, Toast.LENGTH_LONG).show()
                         }
-                        val promptInfo = promptInfoBuilder.build()
-
-                        val biometricPrompt = androidx.biometric.BiometricPrompt(fragmentActivity, executor,
-                            object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
-                                override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
-                                    super.onAuthenticationSucceeded(result)
-                                    if (cryptoObject != null) {
-                                        try {
-                                            result.cryptoObject?.cipher?.doFinal("unlock".toByteArray())
-                                            viewModel.executeUnlockDoor()
-                                        } catch (_: Exception) {
-                                            Toast.makeText(context, streamAuthBypassedText, Toast.LENGTH_LONG).show()
-                                        }
-                                    } else {
-                                        viewModel.executeUnlockDoor()
-                                    }
-                                }
-                            })
-
-                        if (cryptoObject != null) {
-                            biometricPrompt.authenticate(promptInfo, cryptoObject)
-                        } else {
-                            biometricPrompt.authenticate(promptInfo)
-                        }
-                    }
+                    )
                 }
             }
         }
@@ -371,8 +347,26 @@ fun StreamScreen(
                 }
             }
 
+            // Door Open Button (configurable entity and service)
+            if (uiState.doorEntityId.isNotBlank()) {
+                FloatingActionButton(
+                    onClick = { viewModel.handleDoorAction() },
+                    modifier = Modifier.size(64.dp),
+                    containerColor = Color.White.copy(alpha = 0.2f),
+                    contentColor = Color.White,
+                    shape = CircleShape,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LockOpen,
+                        contentDescription = stringResource(R.string.stream_open_door),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+
             // Lock/Unlock Button
-            if (uiState.lockEntityId.isNotBlank()) {
+            if (uiState.doorEntityId.isBlank() && uiState.lockEntityId.isNotBlank()) {
                 val (lockIcon, lockColor) = when (uiState.lockState) {
                     LockState.Unlocked -> Icons.Default.LockOpen to Color.Red.copy(alpha = 0.8f)
                     LockState.Locked -> Icons.Default.Lock to Color.White.copy(alpha = 0.2f)

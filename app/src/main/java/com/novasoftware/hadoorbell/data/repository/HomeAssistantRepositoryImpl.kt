@@ -22,7 +22,7 @@ class HomeAssistantRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun callService(domain: String, service: String, entityId: String): Result<Unit> = withContext(Dispatchers.IO) {
+    override suspend fun callService(domain: String, service: String, entityId: String?): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             api.callService(domain, service, CallServiceRequest(entityId))
             Result.success(Unit)

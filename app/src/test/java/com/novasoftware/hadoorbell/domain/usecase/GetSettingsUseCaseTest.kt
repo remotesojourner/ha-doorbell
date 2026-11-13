@@ -26,6 +26,12 @@ class GetSettingsUseCaseTest {
             every { lockEntityIdFlow } returns flowOf("lock.front")
             every { instantTwoWayAudioFlow } returns flowOf(false)
             every { webrtcProviderFlow } returns flowOf("webrtc")
+            every { doorEntityIdFlow } returns flowOf("switch.door_relay")
+            every { doorServiceFlow } returns flowOf("switch.turn_on")
+            every { answerActionServiceFlow } returns flowOf("switch.turn_on")
+            every { answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+            every { hangupActionServiceFlow } returns flowOf("switch.turn_off")
+            every { hangupActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
         }
         getSettingsUseCase = GetSettingsUseCase(repository)
     }
@@ -41,5 +47,11 @@ class GetSettingsUseCaseTest {
         assertEquals("lock.front", result.lockEntityId)
         assertFalse(result.instantTwoWayAudio)
         assertEquals("webrtc", result.webrtcProvider)
+        assertEquals("switch.door_relay", result.doorEntityId)
+        assertEquals("switch.turn_on", result.doorService)
+        assertEquals("switch.turn_on", result.answerActionService)
+        assertEquals("switch.doorbell_talk", result.answerActionEntityId)
+        assertEquals("switch.turn_off", result.hangupActionService)
+        assertEquals("switch.doorbell_talk", result.hangupActionEntityId)
     }
 }

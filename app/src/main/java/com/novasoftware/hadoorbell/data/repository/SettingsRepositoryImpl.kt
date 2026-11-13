@@ -22,6 +22,12 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
         val LOCK_ENTITY_ID = stringPreferencesKey("lock_entity_id")
         val INSTANT_TWO_WAY_AUDIO = booleanPreferencesKey("instant_two_way_audio")
         val WEBRTC_PROVIDER = stringPreferencesKey("webrtc_provider")
+        val DOOR_ENTITY_ID = stringPreferencesKey("door_entity_id")
+        val DOOR_SERVICE = stringPreferencesKey("door_service")
+        val ANSWER_ACTION_SERVICE = stringPreferencesKey("answer_action_service")
+        val ANSWER_ACTION_ENTITY_ID = stringPreferencesKey("answer_action_entity_id")
+        val HANGUP_ACTION_SERVICE = stringPreferencesKey("hangup_action_service")
+        val HANGUP_ACTION_ENTITY_ID = stringPreferencesKey("hangup_action_entity_id")
     }
 
     override val haUrlFlow: Flow<String?> = context.dataStore.data.map { it[HA_URL]?.trim() }
@@ -31,8 +37,28 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
     override val lockEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[LOCK_ENTITY_ID]?.trim() }
     override val instantTwoWayAudioFlow: Flow<Boolean> = context.dataStore.data.map { it[INSTANT_TWO_WAY_AUDIO] ?: false }
     override val webrtcProviderFlow: Flow<String> = context.dataStore.data.map { it[WEBRTC_PROVIDER] ?: "frigate" }
+    override val doorEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[DOOR_ENTITY_ID]?.trim() }
+    override val doorServiceFlow: Flow<String?> = context.dataStore.data.map { it[DOOR_SERVICE]?.trim() }
+    override val answerActionServiceFlow: Flow<String?> = context.dataStore.data.map { it[ANSWER_ACTION_SERVICE]?.trim() }
+    override val answerActionEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[ANSWER_ACTION_ENTITY_ID]?.trim() }
+    override val hangupActionServiceFlow: Flow<String?> = context.dataStore.data.map { it[HANGUP_ACTION_SERVICE]?.trim() }
+    override val hangupActionEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[HANGUP_ACTION_ENTITY_ID]?.trim() }
 
-    override suspend fun saveSettings(url: String, token: String, source: String, quickReplyEntityId: String, lockEntityId: String, instantTwoWayAudio: Boolean, provider: String) {
+    override suspend fun saveSettings(
+        url: String,
+        token: String,
+        source: String,
+        quickReplyEntityId: String,
+        lockEntityId: String,
+        instantTwoWayAudio: Boolean,
+        provider: String,
+        doorEntityId: String,
+        doorService: String,
+        answerActionService: String,
+        answerActionEntityId: String,
+        hangupActionService: String,
+        hangupActionEntityId: String
+    ) {
         context.dataStore.edit { preferences ->
             var finalUrl = url.trim().trimEnd('/')
             if (finalUrl.isNotBlank()) {
@@ -48,6 +74,12 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
             preferences[LOCK_ENTITY_ID] = lockEntityId.trim()
             preferences[INSTANT_TWO_WAY_AUDIO] = instantTwoWayAudio
             preferences[WEBRTC_PROVIDER] = provider
+            preferences[DOOR_ENTITY_ID] = doorEntityId.trim()
+            preferences[DOOR_SERVICE] = doorService.trim()
+            preferences[ANSWER_ACTION_SERVICE] = answerActionService.trim()
+            preferences[ANSWER_ACTION_ENTITY_ID] = answerActionEntityId.trim()
+            preferences[HANGUP_ACTION_SERVICE] = hangupActionService.trim()
+            preferences[HANGUP_ACTION_ENTITY_ID] = hangupActionEntityId.trim()
         }
     }
 }

@@ -163,6 +163,28 @@ class SettingsScreenTest {
     }
 
     @Test
+    fun `door and call action fields are displayed`() {
+        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase)
+        composeTestRule.setContent {
+            androidx.compose.material3.MaterialTheme {
+                SettingsScreen(
+                    viewModel = viewModel,
+                    onSave = {}, onCancel = {}, canCancel = false
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText("Door Open Action").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Door Open Entity ID").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Door Open Service (optional)").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Call Actions (Optional)").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Answer Service").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Hang Up Service").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun `webrtc provider options are displayed and can be selected`() {
         val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase)
         composeTestRule.setContent {

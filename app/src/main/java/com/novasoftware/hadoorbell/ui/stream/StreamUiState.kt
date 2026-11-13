@@ -1,6 +1,7 @@
 package com.novasoftware.hadoorbell.ui.stream
 
 import com.novasoftware.hadoorbell.core.webrtc.WebRtcManager
+
 import com.novasoftware.hadoorbell.domain.model.LockState
 
 data class StreamUiState(
@@ -14,5 +15,11 @@ data class StreamUiState(
     val isSwitchingModes: Boolean = false,
     val showQuickReplySheet: Boolean = false,
     val quickReplyOptions: List<String>? = null,
-    val quickReplyError: String? = null
+    val quickReplyError: String? = null,
+    val doorEntityId: String = "",
+    val doorService: String = "",
+    val answerActionService: String = "",
+    val answerActionEntityId: String = "",
+    val hangupActionService: String = "",
+    val hangupActionEntityId: String = ""
 )

@@ -1,5 +1,6 @@
 package com.novasoftware.hadoorbell.ui.settings
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,12 +33,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.novasoftware.hadoorbell.R
+import com.novasoftware.hadoorbell.core.utils.BiometricPromptHelper
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,6 +53,30 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     if (!uiState.isLoaded) return
+
+    val context = LocalContext.current
+    val callActionsAuthTitle = stringResource(R.string.settings_call_actions_auth_title)
+    val callActionsAuthSubtitle = stringResource(R.string.settings_call_actions_auth_subtitle)
+    val callActionsAuthError = stringResource(R.string.settings_call_actions_auth_error)
+
+    val saveSettings = {
+        if (viewModel.callActionsChanged()) {
+            BiometricPromptHelper.authenticate(
+                context = context,
+                title = callActionsAuthTitle,
+                subtitle = callActionsAuthSubtitle,
+                onSuccess = { viewModel.saveSettings(onSave) },
+                onCryptoFailure = {
+                    Toast.makeText(context, callActionsAuthError, Toast.LENGTH_LONG).show()
+                },
+                onError = {
+                    Toast.makeText(context, callActionsAuthError, Toast.LENGTH_LONG).show()
+                }
+            )
+        } else {
+            viewModel.saveSettings(onSave)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -72,7 +99,7 @@ fun SettingsScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { viewModel.saveSettings(onSave) },
+                onClick = { saveSettings() },
                 icon = { },
                 text = { Text(stringResource(R.string.settings_save), fontWeight = FontWeight.Bold) },
                 containerColor = MaterialTheme.colorScheme.primary,
@@ -257,6 +284,98 @@ fun SettingsScreen(
                         label = { Text(stringResource(R.string.settings_door_lock_id)) },
                         placeholder = { Text("lock.front_door") },
                         modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    Text(
+                        stringResource(R.string.settings_door_open),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Text(
+                        stringResource(R.string.settings_door_open_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.doorEntityId,
+                        onValueChange = { viewModel.updateDoorEntityId(it) },
+                        label = { Text(stringResource(R.string.settings_door_entity)) },
+                        placeholder = { Text("switch.door_relay") },
+                        modifier = Modifier.fillMaxWidth().testTag("door_entity_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.doorService,
+                        onValueChange = { viewModel.updateDoorService(it) },
+                        label = { Text(stringResource(R.string.settings_door_service)) },
+                        placeholder = { Text("switch.turn_on") },
+                        modifier = Modifier.fillMaxWidth().testTag("door_service_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    Text(
+                        stringResource(R.string.settings_door_service_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Text(
+                        stringResource(R.string.settings_call_actions),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Text(
+                        stringResource(R.string.settings_call_actions_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.answerActionService,
+                        onValueChange = { viewModel.updateAnswerActionService(it) },
+                        label = { Text(stringResource(R.string.settings_answer_action)) },
+                        placeholder = { Text("switch.turn_on") },
+                        modifier = Modifier.fillMaxWidth().testTag("answer_action_service_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.answerActionEntityId,
+                        onValueChange = { viewModel.updateAnswerActionEntityId(it) },
+                        label = { Text(stringResource(R.string.settings_answer_entity)) },
+                        placeholder = { Text("switch.doorbell_talk") },
+                        modifier = Modifier.fillMaxWidth().testTag("answer_action_entity_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.hangupActionService,
+                        onValueChange = { viewModel.updateHangupActionService(it) },
+                        label = { Text(stringResource(R.string.settings_hangup_action)) },
+                        placeholder = { Text("switch.turn_off") },
+                        modifier = Modifier.fillMaxWidth().testTag("hangup_action_service_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.hangupActionEntityId,
+                        onValueChange = { viewModel.updateHangupActionEntityId(it) },
+                        label = { Text(stringResource(R.string.settings_hangup_entity)) },
+                        placeholder = { Text("switch.doorbell_talk") },
+                        modifier = Modifier.fillMaxWidth().testTag("hangup_action_entity_input"),
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true
                     )

@@ -68,10 +68,10 @@ class WebRtcManager(
         return eglBase!!.eglBaseContext
     }
 
-    fun startConnection(videoSink: VideoSink, enableMicrophone: Boolean, onError: (String) -> Unit) {
+    fun startConnection(videoSink: VideoSink, enableMicrophone: Boolean, onError: (String) -> Unit): kotlinx.coroutines.Job {
         audioDeviceManager.start()
 
-        connectionJob = coroutineScope.launch {
+        val job = coroutineScope.launch {
             try {
                 signalingClient.connect()
                 
@@ -232,9 +232,14 @@ class WebRtcManager(
                 }
             }
         }
+
+        connectionJob = job
+        return job
     }
 
-
+    fun setMicrophoneEnabled(enabled: Boolean) {
+        localAudioTrack?.setEnabled(enabled)
+    }
 
     fun toggleStreamMute(muted: Boolean) {
         remoteAudioTrack?.setEnabled(!muted)
