@@ -6,6 +6,7 @@ import com.novasoftware.hadoorbell.data.remote.EntityStateResponse
 import com.novasoftware.hadoorbell.data.remote.HomeAssistantApi
 import com.novasoftware.hadoorbell.data.remote.SetSelectOptionRequest
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantServiceField
 import com.novasoftware.hadoorbell.domain.model.normalizeHomeAssistantUrl
@@ -31,7 +32,9 @@ class HomeAssistantRepositoryImpl @Inject constructor(
                         ?.takeIf { it.isNotBlank() } ?: state.entityId,
                     options = (state.attributes?.get("options") as? List<*>).orEmpty()
                         .filterIsInstance<String>(),
-                    icon = state.icon()
+                    icon = state.attribute("icon"),
+                    state = state.state,
+                    deviceClass = state.attribute("device_class")
                 )
             }
         }
@@ -83,8 +86,11 @@ class HomeAssistantRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun getEntityIcon(entityId: String): Result<String?> =
-        requestResult { api.getEntityState(entityId).icon() }
+    override suspend fun getEntityAppearance(entityId: String): Result<HomeAssistantEntityAppearance> =
+        requestResult {
+            val entity = api.getEntityState(entityId)
+            HomeAssistantEntityAppearance(entity.state, entity.attribute("icon"), entity.attribute("device_class"))
+        }
 
     override suspend fun callService(domain: String, service: String, entityId: String?): Result<Unit> =
         callService(domain, service, entityId, JsonObject())
@@ -127,8 +133,8 @@ class HomeAssistantRepositoryImpl @Inject constructor(
         }
     }
 
-    private fun EntityStateResponse.icon(): String? =
-        (attributes?.get("icon") as? String)?.trim()?.takeIf { it.isNotEmpty() }
+    private fun EntityStateResponse.attribute(key: String): String? =
+        (attributes?.get(key) as? String)?.trim()?.takeIf { it.isNotEmpty() }
 
     private fun JsonObject.serviceFields(): Map<String, HomeAssistantServiceField> = buildMap {
         for ((key, value) in entrySet()) {

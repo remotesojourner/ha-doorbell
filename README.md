@@ -51,7 +51,7 @@ Choose **Call a service** to browse Home Assistant services, pick a target when 
 
 Tap **Call** in the list to set optional Answer and Hang Up services or start two-way audio immediately.
 
-Stream buttons display icons. Pick a Material Design Icon for any editable button, or leave it on **Automatic** to use the icon reported by Home Assistant. The app uses a built-in icon when Home Assistant leaves it unspecified.
+Stream buttons display icons. Pick a Material Design Icon for any editable button, or leave it on **Automatic** to follow its Home Assistant entity. The app refreshes Automatic icons when the stream opens and after an action succeeds. When the entity has no explicit icon, built-in icons can reflect states such as a light being off or a cover being open.
 
 ## Development
 

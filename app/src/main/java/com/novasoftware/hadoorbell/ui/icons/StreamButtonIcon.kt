@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.res.ResourcesCompat
 import com.novasoftware.hadoorbell.R
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import com.novasoftware.hadoorbell.domain.model.LockState
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
@@ -78,43 +79,93 @@ internal fun rememberStreamButtonIconChoices(): List<String> {
 @Composable
 internal fun resolveStreamButtonIcon(
     button: StreamButton,
-    currentEntityIcon: String?,
-    hasCurrentEntityIcon: Boolean = currentEntityIcon != null
+    entityAppearance: HomeAssistantEntityAppearance?
+): String? = resolveStreamButtonIcon(
+    action = button.action,
+    entityId = button.action.entityId,
+    selectedIcon = button.icon,
+    cachedEntityIcon = button.entityIcon,
+    entityAppearance = entityAppearance
+)
+
+@Composable
+internal fun resolveStreamButtonIcon(
+    action: StreamButtonAction?,
+    entityId: String,
+    selectedIcon: String?,
+    cachedEntityIcon: String?,
+    entityAppearance: HomeAssistantEntityAppearance?
 ): String? {
     val context = LocalContext.current
     val icons = remember(context) { MaterialDesignIcons.glyphs(context) }
-    val entityIcon = if (hasCurrentEntityIcon) currentEntityIcon else button.entityIcon
-    val resolved = button.icon?.iconName()?.takeIf(icons::containsKey)
+    val entityIcon = if (entityAppearance != null) entityAppearance.icon else cachedEntityIcon
+    val resolved = selectedIcon?.iconName()?.takeIf(icons::containsKey)
         ?: entityIcon?.iconName()?.takeIf(icons::containsKey)
     if (resolved != null) return resolved
 
-    val action = button.action
     return when {
         action is StreamButtonAction.DoorLock || action is StreamButtonAction.QuickReply -> null
         action is StreamButtonAction.CallService && action.doorRelease -> null
-        else -> defaultHomeAssistantIcon(action.entityId)?.takeIf(icons::containsKey)
+        else -> defaultHomeAssistantIcon(entityId, entityAppearance)?.takeIf(icons::containsKey)
     }
 }
 
-internal fun defaultHomeAssistantIcon(entityId: String): String? = when (entityId.substringBefore('.')) {
+private fun defaultHomeAssistantIcon(
+    entityId: String,
+    appearance: HomeAssistantEntityAppearance?
+): String? = when (entityId.substringBefore('.')) {
     "automation" -> "robot"
     "button", "input_button" -> "gesture-tap-button"
     "climate" -> "thermostat"
-    "cover" -> "window-shutter"
-    "fan" -> "fan"
+    "cover" -> coverIcon(appearance)
+    "fan" -> if (appearance?.state == "off") "fan-off" else "fan"
     "humidifier" -> "air-humidifier"
-    "input_boolean" -> "toggle-switch"
+    "input_boolean" -> if (appearance?.state == "off") "close-circle-outline" else "check-circle-outline"
     "input_select", "select" -> "format-list-bulleted"
-    "light" -> "lightbulb"
-    "lock" -> "lock"
+    "light" -> if (appearance?.state == "off") "lightbulb-off" else "lightbulb"
+    "lock" -> when (appearance?.state) {
+        "open", "unlocked" -> "lock-open-variant"
+        "opening", "locking", "unlocking" -> "lock-clock"
+        "jammed" -> "lock-alert"
+        else -> "lock"
+    }
     "media_player" -> "cast"
     "remote" -> "remote"
     "scene" -> "palette"
     "script" -> "script-text"
     "siren" -> "bullhorn"
-    "switch" -> "toggle-switch"
+    "switch" -> if (appearance?.deviceClass == "outlet") {
+        if (appearance.state == "off") "power-plug-off" else "power-plug"
+    } else {
+        if (appearance?.state == "off") "toggle-switch-variant-off" else "toggle-switch-variant"
+    }
     "valve" -> "valve"
     else -> null
+}
+
+private fun coverIcon(appearance: HomeAssistantEntityAppearance?): String {
+    if (appearance == null) return "window-shutter"
+    val (open, closed) = when (appearance.deviceClass) {
+        "blind" -> "blinds-horizontal" to "blinds-horizontal-closed"
+        "curtain" -> "curtains" to "curtains-closed"
+        "damper" -> "circle" to "circle-slice-8"
+        "door" -> "door-open" to "door-closed"
+        "garage" -> "garage-open" to "garage"
+        "gate" -> "gate-open" to "gate"
+        "shade" -> "roller-shade" to "roller-shade-closed"
+        "shutter" -> "window-shutter-open" to "window-shutter"
+        else -> "window-open" to "window-closed"
+    }
+    return when (appearance.state) {
+        "closed" -> closed
+        "opening", "closing" -> when (appearance.deviceClass) {
+            "curtain" -> if (appearance.state == "opening") "arrow-split-vertical" else "arrow-collapse-horizontal"
+            "door", "damper" -> open
+            "gate" -> "arrow-right"
+            else -> if (appearance.state == "opening") "arrow-up-box" else "arrow-down-box"
+        }
+        else -> open
+    }
 }
 
 internal fun streamButtonFallbackIcon(

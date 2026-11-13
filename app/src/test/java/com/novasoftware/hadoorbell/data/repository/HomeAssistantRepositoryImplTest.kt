@@ -7,6 +7,7 @@ import com.novasoftware.hadoorbell.data.remote.EntityStateResponse
 import com.novasoftware.hadoorbell.data.remote.HomeAssistantApi
 import com.novasoftware.hadoorbell.data.remote.ServiceDomainResponse
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -14,7 +15,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -57,22 +57,30 @@ class HomeAssistantRepositoryImplTest {
             listOf(
                 HomeAssistantEntity(
                     "select.reply", "Doorbell replies", listOf("Go away", "Leave at door"),
-                    icon = "mdi:message-text"
+                    icon = "mdi:message-text",
+                    state = "Go away"
                 ),
-                HomeAssistantEntity("lock.front_door", "lock.front_door")
+                HomeAssistantEntity("lock.front_door", "lock.front_door", state = "locked")
             ),
             entities
         )
     }
 
     @Test
-    fun `live entity icon comes from state attributes when available`() = runTest {
+    fun `live entity appearance includes its state and optional icon metadata`() = runTest {
         coEvery { api.getEntityState("light.porch") } returns
             EntityStateResponse("light.porch", "on", mapOf("icon" to "mdi:outdoor-lamp"))
-        coEvery { api.getEntityState("switch.relay") } returns EntityStateResponse("switch.relay", "off", null)
+        coEvery { api.getEntityState("switch.relay") } returns
+            EntityStateResponse("switch.relay", "off", mapOf("device_class" to "outlet"))
 
-        assertEquals("mdi:outdoor-lamp", repository.getEntityIcon("light.porch").getOrThrow())
-        assertNull(repository.getEntityIcon("switch.relay").getOrThrow())
+        assertEquals(
+            HomeAssistantEntityAppearance("on", "mdi:outdoor-lamp"),
+            repository.getEntityAppearance("light.porch").getOrThrow()
+        )
+        assertEquals(
+            HomeAssistantEntityAppearance("off", deviceClass = "outlet"),
+            repository.getEntityAppearance("switch.relay").getOrThrow()
+        )
     }
 
     @Test

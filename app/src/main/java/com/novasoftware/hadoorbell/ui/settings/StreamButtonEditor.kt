@@ -66,13 +66,13 @@ import com.google.gson.stream.JsonToken
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
+import com.novasoftware.hadoorbell.domain.model.LockState
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.model.isHomeAssistantEventType
 import com.novasoftware.hadoorbell.domain.model.isHomeAssistantServicePart
 import com.novasoftware.hadoorbell.ui.icons.StreamButtonIcon
-import com.novasoftware.hadoorbell.ui.icons.defaultHomeAssistantIcon
 import com.novasoftware.hadoorbell.ui.icons.rememberStreamButtonIconChoices
 import com.novasoftware.hadoorbell.ui.icons.resolveStreamButtonIcon
 import com.novasoftware.hadoorbell.ui.icons.streamButtonFallbackIcon
@@ -124,6 +124,9 @@ internal fun StreamButtonEditor(
                         onEdit = {
                             editingRow = row
                             editingId = button.id
+                            if (entities.isEmpty() && button.action.entityId.isNotBlank() && button.icon.isNullOrBlank()) {
+                                onLoadEntities()
+                            }
                         },
                         onMoveUp = if (index > 0) {
                             { onLayoutChange(row.replace(layout, buttons.move(index, index - 1))) }
@@ -232,7 +235,7 @@ private fun StreamButtonListItem(
     }
     val actionSummary = details?.let { stringResource(R.string.stream_button_action_summary, actionLabel, it) }
         ?: actionLabel
-    val icon = resolveStreamButtonIcon(button, entity?.icon, hasCurrentEntityIcon = entity != null)
+    val icon = resolveStreamButtonIcon(button, entity?.appearance)
     ListItem(
         headlineContent = {
             Row(
@@ -263,7 +266,8 @@ private fun StreamButtonListItem(
         },
         leadingContent = {
             if (icon == null) {
-                Icon(streamButtonFallbackIcon(button.action), contentDescription = null)
+                val lockState = entity?.state?.let(LockState::fromString) ?: LockState.Locked
+                Icon(streamButtonFallbackIcon(button.action, lockState), contentDescription = null)
             } else {
                 StreamButtonIcon(icon, contentDescription = null)
             }
@@ -382,7 +386,6 @@ private fun EditStreamButtonDialog(
     val entity = entities.find { it.entityId == entityId }
     val currentEntityIcon = if (entity != null) entity.icon else cachedEntityIcon
     val currentEntityName = entity?.name?.takeIf(String::isNotBlank) ?: cachedEntityName
-    val automaticIcon = currentEntityIcon ?: entityId?.let(::defaultHomeAssistantIcon)
     val service = serviceId.trim()
     val selectedService = services.find { serviceId(it) == service }
     val isService = kind == ActionKind.CALL_SERVICE
@@ -421,6 +424,11 @@ private fun EditStreamButtonDialog(
             ?.let { StreamButtonAction.FireEvent(trimmedEvent, it) }
         ActionKind.QUICK_REPLY -> entityId?.let(StreamButtonAction::QuickReply)
     }
+    val automaticIcon = resolveStreamButtonIcon(action, target, null, cachedEntityIcon, entity?.appearance)
+    val previewIcon = if (icon == null) automaticIcon else
+        resolveStreamButtonIcon(action, target, icon, cachedEntityIcon, entity?.appearance)
+    val lockState = entity?.state?.let(LockState::fromString) ?: LockState.Locked
+    val fallbackIcon = action?.let { streamButtonFallbackIcon(it, lockState) } ?: Icons.Default.Widgets
 
     fun clearEntity() {
         entityId = null
@@ -452,6 +460,7 @@ private fun EditStreamButtonDialog(
             StreamButtonIconPicker(
                 icon = icon,
                 automaticIcon = automaticIcon,
+                automaticFallback = fallbackIcon,
                 onDismiss = { picker = null },
                 onSelect = {
                     icon = it
@@ -636,7 +645,7 @@ private fun EditStreamButtonDialog(
                         onClick = { picker = EditorPicker.ICON },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        IconPreview(icon ?: automaticIcon)
+                        IconPreview(previewIcon, fallbackIcon)
                         Text(
                             text = icon?.let(::iconDisplayName) ?: stringResource(R.string.stream_button_icon_auto),
                             modifier = Modifier.padding(start = 8.dp),
@@ -867,6 +876,7 @@ private fun SelectOptionPicker(
 private fun StreamButtonIconPicker(
     icon: String?,
     automaticIcon: String?,
+    automaticFallback: ImageVector,
     onDismiss: () -> Unit,
     onSelect: (String?) -> Unit
 ) {
@@ -894,6 +904,7 @@ private fun StreamButtonIconPicker(
                     label = stringResource(R.string.stream_button_icon_auto),
                     icon = automaticIcon,
                     selected = icon == null,
+                    fallback = automaticFallback,
                     onClick = { onSelect(null) }
                 )
                 if (matches.isEmpty()) {
@@ -921,10 +932,16 @@ private fun StreamButtonIconPicker(
 }
 
 @Composable
-private fun IconChoice(label: String, icon: String?, selected: Boolean, onClick: () -> Unit) {
+private fun IconChoice(
+    label: String,
+    icon: String?,
+    selected: Boolean,
+    fallback: ImageVector = Icons.Default.Widgets,
+    onClick: () -> Unit
+) {
     ListItem(
         headlineContent = { Text(label) },
-        leadingContent = { IconPreview(icon) },
+        leadingContent = { IconPreview(icon, fallback) },
         modifier = Modifier.clickable(onClick = onClick),
         colors = ListItemDefaults.colors(
             containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer
@@ -934,8 +951,8 @@ private fun IconChoice(label: String, icon: String?, selected: Boolean, onClick:
 }
 
 @Composable
-private fun IconPreview(icon: String?) {
-    if (icon == null) Icon(Icons.Default.Widgets, contentDescription = null)
+private fun IconPreview(icon: String?, fallback: ImageVector) {
+    if (icon == null) Icon(fallback, contentDescription = null)
     else StreamButtonIcon(icon, contentDescription = null)
 }
 

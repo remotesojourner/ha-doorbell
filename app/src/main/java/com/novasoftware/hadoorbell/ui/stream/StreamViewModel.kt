@@ -20,9 +20,11 @@ import com.novasoftware.hadoorbell.core.webrtc.WebRtcManagerFactory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -68,12 +70,14 @@ class StreamViewModel @Inject constructor(
     private var isScreenActive = false
     private var callAnswered = false
     private var initializeJob: Job? = null
+    private var appearanceRefreshJob: Job? = null
     private var answerJob: Job? = null
     private var quickReplyLoadJob: Job? = null
     private var pendingButtonAuthentication: UiEvent.AuthenticateStreamButton? = null
 
     fun initializeConnection(context: Context) {
         initializeJob?.cancel()
+        appearanceRefreshJob?.cancel()
         isScreenActive = true
         initializeJob = viewModelScope.launch {
             val layout = appPreferences.streamButtonLayoutFlow.first()
@@ -85,7 +89,7 @@ class StreamViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     lockStates = emptyMap(),
-                    entityIcons = emptyMap(),
+                    entityAppearances = emptyMap(),
                     answerActionService = answerService,
                     answerActionEntityId = answerEntity,
                     hangupActionService = hangupService,
@@ -109,31 +113,53 @@ class StreamViewModel @Inject constructor(
             val manager = webRtcManagerFactory.create(context, signalingClient, viewModelScope)
             _uiState.update { it.copy(webRtcManager = manager) }
 
-            val visibleButtons = layout.buttons.filter(StreamButton::visible)
-            visibleButtons.asSequence()
-                .filter { it.icon.isNullOrBlank() }
-                .map { it.action.entityId }
-                .filter(String::isNotBlank)
-                .distinct()
-                .forEach { entityId ->
-                    launch {
-                        repository.getEntityIcon(entityId).onSuccess { icon ->
-                            _uiState.update { it.copy(entityIcons = it.entityIcons + (entityId to icon)) }
-                        }
-                    }
-                }
+            refreshButtonAppearances()
+        }
+    }
 
-            visibleButtons
-                .mapNotNull { (it.action as? StreamButtonAction.DoorLock)?.entityId }
-                .distinct()
-                .forEach { entityId ->
+    private fun refreshButtonAppearances(afterAction: Boolean = false, completedLockId: String? = null) {
+        val currentState = _uiState.value
+        if (!isScreenActive || !currentState.isStreamButtonLayoutReady) return
+
+        val buttons = currentState.streamButtonLayout.buttons.filter(StreamButton::visible)
+        val lockIds = buttons.mapNotNull { (it.action as? StreamButtonAction.DoorLock)?.entityId }.toSet()
+        val entityIds = (buttons
+            .filter { it.icon.isNullOrBlank() }
+            .map { it.action.entityId }
+            .toSet() + lockIds).filter(String::isNotBlank)
+
+        appearanceRefreshJob?.cancel()
+        if (entityIds.isEmpty()) return
+        appearanceRefreshJob = viewModelScope.launch {
+            suspend fun refresh() = coroutineScope {
+                entityIds.forEach { entityId ->
                     launch {
-                        val result = repository.getEntityState(entityId)
-                        if (entityId !in _uiState.value.runningLockEntityIds) {
-                            updateLockState(entityId, LockState.fromString(result.getOrNull()))
+                        repository.getEntityAppearance(entityId).onSuccess { appearance ->
+                            ensureActive()
+                            _uiState.update { state ->
+                                val lockStates = if (entityId in lockIds &&
+                                    entityId != completedLockId &&
+                                    entityId !in currentState.runningLockEntityIds &&
+                                    entityId !in state.runningLockEntityIds
+                                ) {
+                                    state.lockStates + (entityId to LockState.fromString(appearance.state))
+                                } else {
+                                    state.lockStates
+                                }
+                                state.copy(
+                                    entityAppearances = state.entityAppearances + (entityId to appearance),
+                                    lockStates = lockStates
+                                )
+                            }
                         }
                     }
                 }
+            }
+            refresh()
+            if (afterAction) {
+                delay(APPEARANCE_FOLLOW_UP_MS)
+                refresh()
+            }
         }
     }
 
@@ -150,6 +176,8 @@ class StreamViewModel @Inject constructor(
         isScreenActive = false
         initializeJob?.cancel()
         initializeJob = null
+        appearanceRefreshJob?.cancel()
+        appearanceRefreshJob = null
         dismissQuickReplySheet()
         answerJob?.cancel()
         answerJob = null
@@ -276,7 +304,7 @@ class StreamViewModel @Inject constructor(
             return
         }
 
-        result.onFailure { error ->
+        result.onSuccess { refreshButtonAppearances(afterAction = true) }.onFailure { error ->
             _uiEvent.emit(UiEvent.ShowToast("$label action failed: ${error.message}", long = true))
         }
     }
@@ -378,7 +406,9 @@ class StreamViewModel @Inject constructor(
         _uiState.update { it.copy(runningStreamButtonIds = it.runningStreamButtonIds + button.id) }
         viewModelScope.launch {
             try {
-                executeStreamButtonUseCase(button.action).onFailure { showButtonFailure(button, it) }
+                executeStreamButtonUseCase(button.action)
+                    .onSuccess { refreshButtonAppearances(afterAction = true) }
+                    .onFailure { showButtonFailure(button, it) }
             } finally {
                 _uiState.update { it.copy(runningStreamButtonIds = it.runningStreamButtonIds - button.id) }
             }
@@ -419,6 +449,7 @@ class StreamViewModel @Inject constructor(
                 state.copy(quickReplySheet = sheet.takeIf { result.isFailure })
             }
             result.onSuccess {
+                refreshButtonAppearances(afterAction = true)
                 _uiEvent.emit(UiEvent.ShowToast(appContext.getString(R.string.stream_quick_reply_sent, option)))
             }.onFailure { showButtonFailure(sheet.button, it) }
         }
@@ -428,15 +459,20 @@ class StreamViewModel @Inject constructor(
         if (entityId in _uiState.value.runningLockEntityIds) return
         _uiState.update { it.copy(runningLockEntityIds = it.runningLockEntityIds + entityId) }
         viewModelScope.launch {
+            val expectedState = if (unlock) LockState.Unlocked else LockState.Locked
+            var completed = false
             try {
                 val updates = if (unlock) unlockDoorUseCase(entityId) else lockDoorUseCase(entityId)
                 updates.collect { result ->
-                    updateLockState(entityId, result.getOrDefault(LockState.Unknown))
+                    val state = result.getOrDefault(LockState.Unknown)
+                    updateLockState(entityId, state)
+                    completed = result.isSuccess && state == expectedState
                     result.onFailure { showButtonFailure(button, it) }
                 }
             } finally {
                 _uiState.update { it.copy(runningLockEntityIds = it.runningLockEntityIds - entityId) }
             }
+            if (completed) refreshButtonAppearances(afterAction = true, completedLockId = entityId)
         }
     }
 
@@ -461,5 +497,6 @@ class StreamViewModel @Inject constructor(
     companion object {
         private const val CALL_ACTION_TIMEOUT_MS = 10_000L
         private const val CONNECTION_TIMEOUT_MS = 15_000L
+        private const val APPEARANCE_FOLLOW_UP_MS = 1_000L
     }
 }

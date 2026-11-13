@@ -5,6 +5,7 @@ import com.google.gson.JsonObject
 import com.novasoftware.hadoorbell.MainDispatcherRule
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.data.repository.SettingsRepositoryImpl
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import com.novasoftware.hadoorbell.domain.repository.HomeAssistantRepository
 import com.novasoftware.hadoorbell.domain.usecase.CallActionUseCase
 import com.novasoftware.hadoorbell.domain.usecase.ExecuteStreamButtonUseCase
@@ -80,8 +81,7 @@ class StreamViewModelTest {
         }
         
         repository = mockk(relaxed = true) {
-            coEvery { getEntityState(any()) } returns Result.success("locked")
-            coEvery { getEntityIcon(any()) } returns Result.success(null)
+            coEvery { getEntityAppearance(any()) } returns Result.success(HomeAssistantEntityAppearance("locked"))
             coEvery { callService(any(), any(), any()) } returns Result.success(Unit)
             coEvery { callService(any(), any(), any(), any(), any()) } returns Result.success(Unit)
         }
@@ -140,26 +140,61 @@ class StreamViewModelTest {
             bottom = listOf(lampAgain, noIcon, event)
         )
         every { appPreferences.streamButtonLayoutFlow } returns flowOf(layout)
-        val response = CompletableDeferred<Result<String?>>()
-        coEvery { repository.getEntityIcon("light.porch") } coAnswers { response.await() }
+        val response = CompletableDeferred<Result<HomeAssistantEntityAppearance>>()
+        coEvery { repository.getEntityAppearance("light.porch") } coAnswers { response.await() }
+        val replyAppearance = HomeAssistantEntityAppearance("Ready")
+        coEvery { repository.getEntityAppearance("select.reply") } returns Result.success(replyAppearance)
 
         viewModel.initializeConnection(context)
         runCurrent()
 
         assertEquals(webRtcManager, viewModel.uiState.value.webRtcManager)
-        assertEquals(mapOf<String, String?>("select.reply" to null), viewModel.uiState.value.entityIcons)
-        coVerify(exactly = 1) { repository.getEntityIcon("light.porch") }
-        coVerify(exactly = 0) { repository.getEntityIcon("button.gate") }
-        coVerify(exactly = 0) { repository.getEntityIcon("switch.hidden") }
-        coVerify(exactly = 0) { repository.getEntityIcon("") }
+        assertEquals(mapOf("select.reply" to replyAppearance), viewModel.uiState.value.entityAppearances)
+        coVerify(exactly = 1) { repository.getEntityAppearance("light.porch") }
+        coVerify(exactly = 0) { repository.getEntityAppearance("button.gate") }
+        coVerify(exactly = 0) { repository.getEntityAppearance("switch.hidden") }
+        coVerify(exactly = 0) { repository.getEntityAppearance("") }
 
-        response.complete(Result.success("mdi:outdoor-lamp"))
+        val lampAppearance = HomeAssistantEntityAppearance("on", "mdi:outdoor-lamp")
+        response.complete(Result.success(lampAppearance))
         advanceUntilIdle()
 
         assertEquals(
-            mapOf("light.porch" to "mdi:outdoor-lamp", "select.reply" to null),
-            viewModel.uiState.value.entityIcons
+            mapOf("light.porch" to lampAppearance, "select.reply" to replyAppearance),
+            viewModel.uiState.value.entityAppearances
         )
+    }
+
+    @Test
+    fun `successful actions refresh the icons of affected buttons after their state changes`() = runTest {
+        val lamp = StreamButton("lamp", StreamButtonAction.CallService("light", "toggle", "light.porch"))
+        val script = StreamButton("script", StreamButtonAction.RunScript("script.welcome"))
+        every { appPreferences.streamButtonLayoutFlow } returns
+            flowOf(StreamButtonLayout(top = listOf(lamp), bottom = listOf(script)))
+        val off = HomeAssistantEntityAppearance("off", "mdi:lightbulb-off")
+        val on = HomeAssistantEntityAppearance("on", "mdi:lightbulb-on")
+        coEvery { repository.getEntityAppearance("light.porch") } returnsMany listOf(
+            Result.success(off),
+            Result.success(off),
+            Result.success(on),
+            Result.failure(IllegalStateException("offline")),
+            Result.failure(IllegalStateException("offline"))
+        )
+
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+        assertEquals(off, viewModel.uiState.value.entityAppearances["light.porch"])
+
+        viewModel.handleStreamButton(script)
+        runCurrent()
+        assertEquals(off, viewModel.uiState.value.entityAppearances["light.porch"])
+        assertTrue(viewModel.uiState.value.canRun(script))
+        advanceUntilIdle()
+        assertEquals(on, viewModel.uiState.value.entityAppearances["light.porch"])
+
+        viewModel.handleStreamButton(lamp)
+        advanceUntilIdle()
+        assertEquals(on, viewModel.uiState.value.entityAppearances["light.porch"])
     }
 
     @Test
@@ -203,7 +238,7 @@ class StreamViewModelTest {
 
         assertEquals(revised, viewModel.uiState.value.streamButtonLayout)
         assertTrue(viewModel.uiState.value.isMicEnabled)
-        coVerify(exactly = 2) { repository.getEntityState("lock.front") }
+        coVerify(exactly = 2) { repository.getEntityAppearance("lock.front") }
     }
 
     @Test
@@ -281,6 +316,7 @@ class StreamViewModelTest {
 
         coVerify(exactly = 1) { sendQuickReplyUseCase("input_select.side", "Wait here") }
         coVerify(exactly = 0) { sendQuickReplyUseCase("select.front", any()) }
+        coVerify(exactly = 3) { repository.getEntityAppearance("input_select.side") }
         assertEquals(null, viewModel.uiState.value.quickReplySheet)
     }
 
@@ -533,9 +569,22 @@ class StreamViewModelTest {
         val side = StreamButton("side", StreamButtonAction.DoorLock("lock.side"), requiresAuthentication = true)
         every { appPreferences.streamButtonLayoutFlow } returns
             flowOf(StreamButtonLayout(top = listOf(front), bottom = listOf(side)))
-        coEvery { repository.getEntityState("lock.side") } returns Result.success("unlocked")
-        every { lockDoorUseCase("lock.side") } returns flowOf(Result.success(LockState.Locked))
-        every { unlockDoorUseCase("lock.front") } returns flowOf(Result.success(LockState.Unlocked))
+        var sideState = "unlocked"
+        var frontState = "locked"
+        coEvery { repository.getEntityAppearance("lock.side") } coAnswers {
+            Result.success(HomeAssistantEntityAppearance(sideState))
+        }
+        coEvery { repository.getEntityAppearance("lock.front") } coAnswers {
+            Result.success(HomeAssistantEntityAppearance(frontState))
+        }
+        every { lockDoorUseCase("lock.side") } answers {
+            sideState = "locked"
+            flowOf(Result.success(LockState.Locked))
+        }
+        every { unlockDoorUseCase("lock.front") } answers {
+            frontState = "unlocked"
+            flowOf(Result.success(LockState.Unlocked))
+        }
         val requests = mutableListOf<UiEvent.AuthenticateStreamButton>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.uiEvent.collect { if (it is UiEvent.AuthenticateStreamButton) requests.add(it) }

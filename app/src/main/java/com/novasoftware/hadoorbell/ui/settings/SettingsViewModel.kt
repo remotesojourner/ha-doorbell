@@ -64,6 +64,9 @@ class SettingsViewModel @Inject constructor(
                     isLoaded = true
                 )
             }
+            if (settings.streamButtonLayout.buttons.any { it.icon.isNullOrBlank() && it.action.entityId.isNotBlank() }) {
+                loadEntities()
+            }
         }
     }
 

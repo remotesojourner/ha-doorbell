@@ -73,6 +73,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.core.utils.BiometricPromptHelper
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import com.novasoftware.hadoorbell.domain.model.LockState
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
@@ -327,7 +328,7 @@ private fun StreamTopControls(
                                 button = button,
                                 enabled = uiState.canRun(button),
                                 lockState = uiState.lockStates[button.action.entityId] ?: LockState.Unknown,
-                                entityIcons = uiState.entityIcons,
+                                entityAppearance = uiState.entityAppearances[button.action.entityId],
                                 onClick = { onButtonClick(button) },
                                 circleSize = 48.dp,
                                 iconSize = 24.dp
@@ -422,7 +423,7 @@ internal fun StreamBottomControls(
                         button = button,
                         enabled = uiState.canRun(button),
                         lockState = uiState.lockStates[button.action.entityId] ?: LockState.Unknown,
-                        entityIcons = uiState.entityIcons,
+                        entityAppearance = uiState.entityAppearances[button.action.entityId],
                         onClick = { onButtonClick(button) },
                         circleSize = actionSize,
                         iconSize = 28.dp
@@ -499,7 +500,7 @@ private fun StreamActionButton(
     button: StreamButton,
     enabled: Boolean,
     lockState: LockState,
-    entityIcons: Map<String, String?>,
+    entityAppearance: HomeAssistantEntityAppearance?,
     onClick: () -> Unit,
     circleSize: Dp,
     iconSize: Dp
@@ -526,8 +527,7 @@ private fun StreamActionButton(
     val lockSemantics = if (lockDescription == null) Modifier else Modifier.semantics {
         stateDescription = lockDescription
     }
-    val entityId = button.action.entityId
-    val resolvedIcon = resolveStreamButtonIcon(button, entityIcons[entityId], entityIcons.containsKey(entityId))
+    val resolvedIcon = resolveStreamButtonIcon(button, entityAppearance)
     val rotation = if (resolvedIcon == null && isLock &&
         (lockState == LockState.Locking || lockState == LockState.Unlocking)
     ) {
