@@ -24,6 +24,7 @@ An Android doorbell application built for Home Assistant. Integrates with built-
 - 🎙️ **2-Way Audio Intercom**: Supports talking back through your camera using Android's native acoustic echo cancellation.
 - 🔐 **Biometric Door Lock Integration**: Unlock your front door from the video stream using Android Fingerprint, Face Unlock, or PIN.
 - 💬 **Quick Replies**: Trigger pre-recorded Home Assistant `select` entity messages.
+- **Custom Stream Buttons**: Put Home Assistant actions on the camera screen and arrange them in the order you use them.
 
 ## Requirements
 
@@ -43,11 +44,19 @@ When you first launch the app, you will be prompted for:
 ### Optional Integrations
 
 
-- **Connect in 2-way mode instantly**: Optionally enable this toggle to skip the initial receive-only mode and hook directly into 2-way audio when the stream opens. *(Note: This feature is mutually exclusive with Quick Replies).*
+- **Connect in 2-way mode instantly**: Start 2-way audio as soon as the stream opens. Leave this off if you use custom buttons for Reolink quick replies.
 - **Quick Reply Entity ID**: Provide the ID of a `select` entity (e.g., `select.doorbell_quick_reply`) to enable instant pre-recorded messages. Entering an entity here will automatically disable the instant 2-way mode above to prevent audio conflicts.
 - **Door Lock Entity ID**: Provide the ID of a `lock` entity (e.g., `lock.front_door`) to add a biometric-protected unlock button to the camera feed.
 - **Door Open Entity ID / Service** (optional): Use any Home Assistant entity and service for the door button, for example `switch.door_relay` with `switch.turn_on` for a momentary relay. The service defaults to the entity domain (`lock.unlock`, `switch.turn_on`, `button.press`, `input_boolean.turn_on`, `cover.open_cover`, `script.turn_on` or `scene.turn_on`). The door button is still protected by the biometric prompt. Leave the entity empty to keep the existing lock button behavior.
 - **Answer / Hang Up Service** (optional): Home Assistant actions to run with the call button, in `domain.service` format with an optional target entity. The answer action runs after the WebRTC session is up with the microphone and the hang up action runs before the audio session is closed. Leave both empty to keep the current local-only microphone behavior.
+
+### Custom Stream Buttons
+
+In **Doorbell Setup → Integrations**, turn on **Use custom stream buttons**. Add up to three actions to each row. Sound and Call stay at the start of the bottom row, which can hold five buttons in total.
+
+Choose an action and pick a Home Assistant entity by name or ID. Buttons can toggle an entity, press a button, choose a specific select option, run a script, or turn on a momentary switch relay. You can name each button, change its order, and require device authentication before it runs.
+
+Turn the setting off to return to your original door and quick reply controls. Your custom layout is saved for the next time you enable it.
 
 ## Development
 

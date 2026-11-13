@@ -7,6 +7,8 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
+import com.novasoftware.hadoorbell.domain.model.normalizeHomeAssistantUrl
 import com.novasoftware.hadoorbell.domain.repository.SettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -28,6 +30,7 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
         val ANSWER_ACTION_ENTITY_ID = stringPreferencesKey("answer_action_entity_id")
         val HANGUP_ACTION_SERVICE = stringPreferencesKey("hangup_action_service")
         val HANGUP_ACTION_ENTITY_ID = stringPreferencesKey("hangup_action_entity_id")
+        private val STREAM_BUTTON_LAYOUT = stringPreferencesKey("stream_button_layout")
     }
 
     override val haUrlFlow: Flow<String?> = context.dataStore.data.map { it[HA_URL]?.trim() }
@@ -43,6 +46,9 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
     override val answerActionEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[ANSWER_ACTION_ENTITY_ID]?.trim() }
     override val hangupActionServiceFlow: Flow<String?> = context.dataStore.data.map { it[HANGUP_ACTION_SERVICE]?.trim() }
     override val hangupActionEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[HANGUP_ACTION_ENTITY_ID]?.trim() }
+    override val streamButtonLayoutFlow: Flow<StreamButtonLayout?> = context.dataStore.data.map {
+        it[STREAM_BUTTON_LAYOUT]?.let(StreamButtonLayoutJson::decode)
+    }
 
     override suspend fun saveSettings(
         url: String,
@@ -57,17 +63,11 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
         answerActionService: String,
         answerActionEntityId: String,
         hangupActionService: String,
-        hangupActionEntityId: String
+        hangupActionEntityId: String,
+        streamButtonLayout: StreamButtonLayout?
     ) {
         context.dataStore.edit { preferences ->
-            var finalUrl = url.trim().trimEnd('/')
-            if (finalUrl.isNotBlank()) {
-                finalUrl = finalUrl.replaceFirst("http://", "https://")
-                if (!finalUrl.startsWith("https://")) {
-                    finalUrl = "https://$finalUrl"
-                }
-            }
-            preferences[HA_URL] = finalUrl
+            preferences[HA_URL] = normalizeHomeAssistantUrl(url)
             preferences[HA_TOKEN] = token.trim()
             preferences[STREAM_SOURCE] = source.trim()
             preferences[QUICK_REPLY_ENTITY_ID] = quickReplyEntityId.trim()
@@ -80,6 +80,11 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
             preferences[ANSWER_ACTION_ENTITY_ID] = answerActionEntityId.trim()
             preferences[HANGUP_ACTION_SERVICE] = hangupActionService.trim()
             preferences[HANGUP_ACTION_ENTITY_ID] = hangupActionEntityId.trim()
+            if (streamButtonLayout == null) {
+                preferences.remove(STREAM_BUTTON_LAYOUT)
+            } else {
+                preferences[STREAM_BUTTON_LAYOUT] = StreamButtonLayoutJson.encode(streamButtonLayout)
+            }
         }
     }
 }

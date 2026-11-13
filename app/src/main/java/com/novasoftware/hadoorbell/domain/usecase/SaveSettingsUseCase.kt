@@ -21,7 +21,8 @@ class SaveSettingsUseCase @Inject constructor(
             answerActionService = settings.answerActionService,
             answerActionEntityId = settings.answerActionEntityId,
             hangupActionService = settings.hangupActionService,
-            hangupActionEntityId = settings.hangupActionEntityId
+            hangupActionEntityId = settings.hangupActionEntityId,
+            streamButtonLayout = settings.streamButtonLayout
         )
     }
 }

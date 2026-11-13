@@ -9,6 +9,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -62,5 +65,30 @@ class AuthInterceptorTest {
         assertEquals("Bearer $expectedToken", recordedRequest.getHeader("Authorization"))
         assertEquals("/api/states/test_entity", recordedRequest.path)
         assertEquals(200, response.code)
+    }
+
+    @Test
+    fun `draft discovery keeps the explicitly provided destination and authorization`() = runTest {
+        mockWebServer.enqueue(MockResponse().setBody(
+            """[{"entity_id":"switch.relay","state":"off","attributes":{"friendly_name":"Relay"}}]"""
+        ))
+        val api = Retrofit.Builder()
+            .baseUrl("http://dummy.url/")
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(HomeAssistantApi::class.java)
+
+        val entities = api.getEntities(
+            mockWebServer.url("/api/states"), "Bearer draft_token", DraftHomeAssistantConnection
+        )
+
+        val recordedRequest = checkNotNull(mockWebServer.takeRequest(5, TimeUnit.SECONDS))
+        assertEquals(listOf("Bearer draft_token"), recordedRequest.headers.values("Authorization"))
+        assertEquals("/api/states", recordedRequest.path)
+        assertEquals(
+            listOf(EntityStateResponse("switch.relay", "off", mapOf("friendly_name" to "Relay"))),
+            entities
+        )
     }
 }

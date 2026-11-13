@@ -1,5 +1,6 @@
 package com.novasoftware.hadoorbell.domain.usecase
 
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.repository.SettingsRepository
 import io.mockk.every
 import io.mockk.mockk
@@ -32,6 +33,7 @@ class GetSettingsUseCaseTest {
             every { answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
             every { hangupActionServiceFlow } returns flowOf("switch.turn_off")
             every { hangupActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+            every { streamButtonLayoutFlow } returns flowOf(StreamButtonLayout())
         }
         getSettingsUseCase = GetSettingsUseCase(repository)
     }
@@ -53,5 +55,6 @@ class GetSettingsUseCaseTest {
         assertEquals("switch.doorbell_talk", result.answerActionEntityId)
         assertEquals("switch.turn_off", result.hangupActionService)
         assertEquals("switch.doorbell_talk", result.hangupActionEntityId)
+        assertEquals(StreamButtonLayout(), result.streamButtonLayout)
     }
 }

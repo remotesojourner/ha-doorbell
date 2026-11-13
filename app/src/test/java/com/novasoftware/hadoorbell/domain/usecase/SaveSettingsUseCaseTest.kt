@@ -1,6 +1,7 @@
 package com.novasoftware.hadoorbell.domain.usecase
 
 import com.novasoftware.hadoorbell.domain.model.Settings
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.repository.SettingsRepository
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -28,7 +29,8 @@ class SaveSettingsUseCaseTest {
             quickReplyEntityId = "select.qr",
             lockEntityId = "lock.front",
             instantTwoWayAudio = true,
-            webrtcProvider = "webrtc"
+            webrtcProvider = "webrtc",
+            streamButtonLayout = StreamButtonLayout(enabled = false)
         )
 
         saveSettingsUseCase(settings)
@@ -41,7 +43,8 @@ class SaveSettingsUseCaseTest {
                 quickReplyEntityId = "select.qr",
                 lockEntityId = "lock.front",
                 instantTwoWayAudio = true,
-                provider = "webrtc"
+                provider = "webrtc",
+                streamButtonLayout = settings.streamButtonLayout
             )
         }
     }

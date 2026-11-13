@@ -10,7 +10,6 @@
     <string name="settings_stream_source_desc">Go2rtc stream name that supports 2 way audio</string>
     <string name="settings_stream_source">go2rtc Stream Name</string>
     <string name="settings_integrations_optional">Integrations (Optional)</string>
-    <string name="settings_integrations_desc">If you have a select entity for quick replies or a lock entity to open your door, enter their IDs below.</string>
     <string name="settings_instant_2way">Connect in 2-way mode instantly</string>
     <string name="settings_quick_reply_id">Quick Reply Entity ID</string>
     <string name="settings_door_lock_id">Door Lock Entity ID</string>
@@ -25,9 +24,17 @@
     <string name="settings_answer_entity">Answer Target Entity (optional)</string>
     <string name="settings_hangup_action">Hang Up Service</string>
     <string name="settings_hangup_entity">Hang Up Target Entity (optional)</string>
-    <string name="settings_call_actions_auth_title">Change Call Actions</string>
-    <string name="settings_call_actions_auth_subtitle">Authenticate to save call actions</string>
-    <string name="settings_call_actions_auth_error">Authentication required to save call actions</string>
+    <string name="settings_use_custom_buttons">Use custom stream buttons</string>
+    <string name="settings_browse_entities">Browse</string>
+    <string name="settings_browse_entity_target">Browse entities for %1$s</string>
+    <string name="settings_entities_missing_connection">Enter your Home Assistant URL and access token in Server Connection first.</string>
+    <string name="settings_entities_changed_server">Enter an access token for the new Home Assistant server.</string>
+    <string name="settings_entities_invalid_connection">Check the Home Assistant URL and access token.</string>
+    <string name="settings_entities_auth_error">Home Assistant denied access. Check your access token.</string>
+    <string name="settings_entities_request_error">Could not load Home Assistant entities. Check the connection and try again.</string>
+    <string name="settings_controls_auth_title">Change Stream Controls</string>
+    <string name="settings_controls_auth_subtitle">Authenticate to save changes to protected controls</string>
+    <string name="settings_controls_auth_error">Authentication required to save these changes</string>
     
     <string name="stream_connection_failed">Connection Failed</string>
     <string name="stream_connecting">Connecting to Doorbell...</string>

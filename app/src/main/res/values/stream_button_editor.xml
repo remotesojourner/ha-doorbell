@@ -1,0 +1,37 @@
+<resources>
+    <string name="stream_button_top">Top row</string>
+    <string name="stream_button_bottom">Bottom row</string>
+    <string name="stream_button_fixed_bottom">Sound and Call appear first in this row.</string>
+    <string name="stream_button_add_top">Add top button</string>
+    <string name="stream_button_add_bottom">Add bottom button</string>
+    <string name="stream_button_add">Add stream button</string>
+    <string name="stream_button_edit">Edit stream button</string>
+    <string name="stream_button_menu">Options for %1$s</string>
+    <string name="stream_button_move_up">Move up</string>
+    <string name="stream_button_move_down">Move down</string>
+    <string name="stream_button_move_top">Move to top row</string>
+    <string name="stream_button_move_bottom">Move to bottom row</string>
+    <string name="stream_button_remove">Remove button</string>
+    <string name="stream_button_action">Action</string>
+    <string name="stream_button_action_summary">%1$s · %2$s</string>
+    <string name="stream_button_label">Button label</string>
+    <string name="stream_button_option">Option</string>
+    <string name="stream_button_choose_option">Choose an option</string>
+    <string name="stream_button_current_option">Selected option: %1$s</string>
+    <string name="stream_button_load_options">Load options</string>
+    <string name="stream_button_no_options">This entity has no available options.</string>
+    <string name="stream_button_require_auth">Require device authentication</string>
+    <string name="stream_button_done">Done</string>
+    <string name="stream_button_toggle">Toggle</string>
+    <string name="stream_button_press">Press</string>
+    <string name="stream_button_select">Select option</string>
+    <string name="stream_button_script">Run script</string>
+    <string name="stream_button_turn_on">Turn on</string>
+    <string name="stream_button_choose_entity">Choose a Home Assistant entity</string>
+    <string name="stream_button_entity_search">Search by name or entity ID</string>
+    <string name="stream_button_loading_entities">Loading entities…</string>
+    <string name="stream_button_retry">Retry</string>
+    <string name="stream_button_refresh">Refresh</string>
+    <string name="stream_button_no_entities">No entities are available for this choice.</string>
+    <string name="stream_button_no_matches">No entities match your search.</string>
+</resources>

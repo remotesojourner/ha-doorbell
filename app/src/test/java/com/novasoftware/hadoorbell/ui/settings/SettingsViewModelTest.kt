@@ -1,9 +1,15 @@
 package com.novasoftware.hadoorbell.ui.settings
 
 import com.novasoftware.hadoorbell.MainDispatcherRule
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
+import com.novasoftware.hadoorbell.domain.model.StreamButton
+import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
+import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantEntitiesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSettingsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SaveSettingsUseCase
 import com.novasoftware.hadoorbell.domain.model.Settings
+import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
@@ -25,6 +31,7 @@ class SettingsViewModelTest {
 
     private lateinit var getSettingsUseCase: GetSettingsUseCase
     private lateinit var saveSettingsUseCase: SaveSettingsUseCase
+    private lateinit var getHomeAssistantEntities: GetHomeAssistantEntitiesUseCase
     private lateinit var viewModel: SettingsViewModel
 
     @Before
@@ -49,7 +56,8 @@ class SettingsViewModelTest {
         }
         saveSettingsUseCase = mockk(relaxed = true)
 
-        viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase)
+        getHomeAssistantEntities = mockk()
+        viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities)
     }
 
     @Test
@@ -161,5 +169,47 @@ class SettingsViewModelTest {
         viewModel.saveSettings {}
 
         assertFalse(viewModel.callActionsChanged())
+    }
+
+    @Test
+    fun `entity lookup can use new credentials without saving them`() = runTest {
+        val entities = listOf(HomeAssistantEntity("script.greet_visitor", "Greet visitor"))
+        viewModel.updateUrl("https://new.url")
+        viewModel.loadEntities()
+
+        assertEquals(EntityLoadError.ChangedServer, viewModel.uiState.value.entityLoadError)
+        coVerify(exactly = 0) { getHomeAssistantEntities(any(), any()) }
+
+        viewModel.updateToken("new-token")
+        coEvery { getHomeAssistantEntities("https://new.url", "new-token") } returns Result.success(entities)
+        viewModel.loadEntities()
+
+        assertEquals(entities, viewModel.uiState.value.entities)
+        coVerify(exactly = 0) { saveSettingsUseCase(any()) }
+        viewModel.updateUrl("https://other.url")
+        assertTrue(viewModel.uiState.value.entities.isEmpty())
+    }
+
+    @Test
+    fun `disabling and restoring custom buttons preserves the layout and protected action`() = runTest {
+        val door = StreamButton(
+            id = "door",
+            label = "Open door",
+            action = StreamButtonAction.Press("button.door"),
+            requiresAuthentication = true
+        )
+        val layout = StreamButtonLayout(bottom = listOf(door))
+        viewModel.updateStreamButtonLayout(layout)
+        viewModel.saveSettings {}
+
+        viewModel.setCustomButtonsEnabled(false)
+        assertEquals(layout.copy(enabled = false), viewModel.uiState.value.streamButtonLayout)
+        viewModel.setCustomButtonsEnabled(true)
+        assertEquals(layout, viewModel.uiState.value.streamButtonLayout)
+
+        viewModel.updateStreamButtonLayout(layout.copy(top = listOf(door), bottom = emptyList()))
+        assertFalse(viewModel.protectedButtonsChanged())
+        viewModel.updateStreamButtonLayout(layout.copy(bottom = listOf(door.copy(requiresAuthentication = false))))
+        assertTrue(viewModel.protectedButtonsChanged())
     }
 }

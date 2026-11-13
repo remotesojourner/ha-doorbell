@@ -1,11 +1,15 @@
 package com.novasoftware.hadoorbell.data.repository
 
+import com.novasoftware.hadoorbell.data.remote.DraftHomeAssistantConnection
 import com.novasoftware.hadoorbell.data.remote.EntityStateResponse
 import com.novasoftware.hadoorbell.data.remote.HomeAssistantApi
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -21,6 +25,42 @@ class HomeAssistantRepositoryImplTest {
     fun setup() {
         api = mockk(relaxed = true)
         repository = HomeAssistantRepositoryImpl(api)
+    }
+
+    @Test
+    fun `getEntities uses the draft server and maps friendly names and options`() = runTest {
+        coEvery {
+            api.getEntities(
+                "https://draft.home:8123/api/states".toHttpUrl(),
+                "Bearer draft_token",
+                DraftHomeAssistantConnection
+            )
+        } returns listOf(
+            EntityStateResponse(
+                "select.reply", "Go away",
+                mapOf("friendly_name" to "Doorbell replies", "options" to listOf("Go away", "Leave at door"))
+            ),
+            EntityStateResponse("lock.front_door", "locked", null)
+        )
+
+        val entities = repository.getEntities(" http://draft.home:8123/ ", " draft_token ").getOrThrow()
+
+        assertEquals(
+            listOf(
+                HomeAssistantEntity("select.reply", "Doorbell replies", listOf("Go away", "Leave at door")),
+                HomeAssistantEntity("lock.front_door", "lock.front_door")
+            ),
+            entities
+        )
+    }
+
+    @Test
+    fun `getEntities rejects malformed or incomplete connection settings before network access`() = runTest {
+        assertTrue(repository.getEntities("ftp://draft.home", "token").isFailure)
+        assertTrue(repository.getEntities("https://", "token").isFailure)
+        assertTrue(repository.getEntities("https://user:password@draft.home", "token").isFailure)
+        assertTrue(repository.getEntities("https://draft.home", " ").isFailure)
+        coVerify(exactly = 0) { api.getEntities(any(), any(), any()) }
     }
 
     @Test

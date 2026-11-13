@@ -7,9 +7,11 @@ import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.data.repository.SettingsRepositoryImpl
 import com.novasoftware.hadoorbell.domain.repository.HomeAssistantRepository
 import com.novasoftware.hadoorbell.domain.usecase.CallActionUseCase
+import com.novasoftware.hadoorbell.domain.usecase.ExecuteStreamButtonUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSelectOptionsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.LockDoorUseCase
 import com.novasoftware.hadoorbell.domain.model.LockState
+import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.usecase.OpenDoorUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SendQuickReplyUseCase
 import com.novasoftware.hadoorbell.domain.usecase.UnlockDoorUseCase
@@ -39,6 +41,7 @@ import javax.inject.Inject
 sealed class UiEvent {
     data class ShowToast(val message: String, val long: Boolean = false) : UiEvent()
     data class RequestBiometricAuth(val forDoor: Boolean = false) : UiEvent()
+    data class AuthenticateStreamButton(val button: StreamButton) : UiEvent()
 }
 
 @HiltViewModel
@@ -53,7 +56,8 @@ class StreamViewModel @Inject constructor(
     private val getSelectOptionsUseCase: GetSelectOptionsUseCase,
     private val sendQuickReplyUseCase: SendQuickReplyUseCase,
     private val openDoorUseCase: OpenDoorUseCase,
-    private val callActionUseCase: CallActionUseCase
+    private val callActionUseCase: CallActionUseCase,
+    private val executeStreamButtonUseCase: ExecuteStreamButtonUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StreamUiState())
@@ -65,11 +69,15 @@ class StreamViewModel @Inject constructor(
     private val activeConnection = MutableStateFlow<Job?>(null)
     private var isScreenActive = false
     private var callAnswered = false
+    private var initializeJob: Job? = null
     private var answerJob: Job? = null
+    private var pendingButtonAuthentication: UiEvent.AuthenticateStreamButton? = null
 
     fun initializeConnection(context: Context) {
+        initializeJob?.cancel()
         isScreenActive = true
-        viewModelScope.launch {
+        initializeJob = viewModelScope.launch {
+            val layout = appPreferences.streamButtonLayoutFlow.first()?.takeIf { it.enabled }
             val qrId = appPreferences.quickReplyEntityIdFlow.first() ?: ""
             val lId = appPreferences.lockEntityIdFlow.first() ?: ""
             val dId = appPreferences.doorEntityIdFlow.first() ?: ""
@@ -88,18 +96,24 @@ class StreamViewModel @Inject constructor(
                     answerActionService = answerService,
                     answerActionEntityId = answerEntity,
                     hangupActionService = hangupService,
-                    hangupActionEntityId = hangupEntity
+                    hangupActionEntityId = hangupEntity,
+                    streamButtonLayout = layout,
+                    isStreamButtonLayoutReady = true,
+                    showQuickReplySheet = it.showQuickReplySheet && layout == null
                 )
+            }
+            pendingButtonAuthentication?.let { request ->
+                if (!isConfiguredButton(request.button)) cancelStreamButtonAuthentication()
             }
 
             val instantTwoWay = appPreferences.instantTwoWayAudioFlow.first()
-            val micEnabled = instantTwoWay && qrId.isBlank()
+            val micEnabled = instantTwoWay && (layout != null || qrId.isBlank())
             _uiState.update { it.copy(isMicEnabled = micEnabled) }
             if (micEnabled) {
                 callAnswered = true
             }
 
-            if (lId.isNotBlank()) {
+            if (layout == null && lId.isNotBlank()) {
                 val stateResult = repository.getEntityState(lId)
                 _uiState.update { it.copy(lockState = LockState.fromString(stateResult.getOrNull())) }
             }
@@ -121,6 +135,8 @@ class StreamViewModel @Inject constructor(
 
     fun teardownConnection() {
         isScreenActive = false
+        initializeJob?.cancel()
+        initializeJob = null
         answerJob?.cancel()
         answerJob = null
         val shouldHangUp = callAnswered
@@ -133,7 +149,8 @@ class StreamViewModel @Inject constructor(
                 webRtcManager = null,
                 isMicEnabled = false,
                 isStreamMuted = false,
-                isSwitchingModes = false
+                isSwitchingModes = false,
+                isStreamButtonLayoutReady = false
             )
         }
 
@@ -289,6 +306,53 @@ class StreamViewModel @Inject constructor(
         _uiState.update { it.copy(isStreamMuted = !it.isStreamMuted) }
         val currentState = _uiState.value
         currentState.webRtcManager?.toggleStreamMute(currentState.isStreamMuted)
+    }
+
+    fun handleStreamButton(button: StreamButton) {
+        if (!_uiState.value.isStreamButtonLayoutReady || !isConfiguredButton(button)) return
+        if (!button.requiresAuthentication) {
+            executeStreamButton(button)
+            return
+        }
+        if (pendingButtonAuthentication != null || button.id in _uiState.value.runningStreamButtonIds) {
+            return
+        }
+        val request = UiEvent.AuthenticateStreamButton(button)
+        pendingButtonAuthentication = request
+        viewModelScope.launch { _uiEvent.emit(request) }
+    }
+
+    fun onStreamButtonAuthentication(request: UiEvent.AuthenticateStreamButton, succeeded: Boolean) {
+        if (pendingButtonAuthentication !== request) return
+        cancelStreamButtonAuthentication()
+        if (succeeded && isConfiguredButton(request.button)) {
+            executeStreamButton(request.button)
+        }
+    }
+
+    fun cancelStreamButtonAuthentication() {
+        pendingButtonAuthentication = null
+    }
+
+    private fun isConfiguredButton(button: StreamButton): Boolean {
+        val layout = _uiState.value.streamButtonLayout ?: return false
+        return button in layout.top || button in layout.bottom
+    }
+
+    private fun executeStreamButton(button: StreamButton) {
+        if (button.id in _uiState.value.runningStreamButtonIds) return
+        _uiState.update { it.copy(runningStreamButtonIds = it.runningStreamButtonIds + button.id) }
+        viewModelScope.launch {
+            try {
+                executeStreamButtonUseCase(button.action).onFailure { error ->
+                    val reason = error.localizedMessage ?: appContext.getString(R.string.stream_button_unknown_error)
+                    val message = appContext.getString(R.string.stream_button_failed, button.label, reason)
+                    _uiEvent.emit(UiEvent.ShowToast(message, long = true))
+                }
+            } finally {
+                _uiState.update { it.copy(runningStreamButtonIds = it.runningStreamButtonIds - button.id) }
+            }
+        }
     }
 
     fun openQuickReplySheet() {

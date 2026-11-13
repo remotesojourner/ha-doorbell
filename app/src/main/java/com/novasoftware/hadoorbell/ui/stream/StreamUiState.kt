@@ -1,8 +1,8 @@
 package com.novasoftware.hadoorbell.ui.stream
 
 import com.novasoftware.hadoorbell.core.webrtc.WebRtcManager
-
 import com.novasoftware.hadoorbell.domain.model.LockState
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 
 data class StreamUiState(
     val isMicEnabled: Boolean = false,
@@ -21,5 +21,8 @@ data class StreamUiState(
     val answerActionService: String = "",
     val answerActionEntityId: String = "",
     val hangupActionService: String = "",
-    val hangupActionEntityId: String = ""
+    val hangupActionEntityId: String = "",
+    val streamButtonLayout: StreamButtonLayout? = null,
+    val isStreamButtonLayoutReady: Boolean = false,
+    val runningStreamButtonIds: Set<String> = emptySet()
 )

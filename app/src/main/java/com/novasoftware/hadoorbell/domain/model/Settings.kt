@@ -13,5 +13,6 @@ data class Settings(
     val answerActionService: String = "",
     val answerActionEntityId: String = "",
     val hangupActionService: String = "",
-    val hangupActionEntityId: String = ""
+    val hangupActionEntityId: String = "",
+    val streamButtonLayout: StreamButtonLayout? = null
 )

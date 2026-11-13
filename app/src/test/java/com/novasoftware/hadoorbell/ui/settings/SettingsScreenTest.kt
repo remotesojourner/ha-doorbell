@@ -13,6 +13,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantEntitiesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSettingsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SaveSettingsUseCase
 import com.novasoftware.hadoorbell.domain.model.Settings
@@ -32,6 +33,7 @@ class SettingsScreenTest {
     private lateinit var context: Context
     private lateinit var getSettingsUseCase: GetSettingsUseCase
     private lateinit var saveSettingsUseCase: SaveSettingsUseCase
+    private val getHomeAssistantEntities = io.mockk.mockk<GetHomeAssistantEntitiesUseCase>()
 
     @Before
     fun setup() {
@@ -53,7 +55,7 @@ class SettingsScreenTest {
 
     @Test
     fun `settings screen displays input fields`() {
-        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase)
+        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities)
         composeTestRule.setContent {
             androidx.compose.material3.MaterialTheme {
                 SettingsScreen(
@@ -81,7 +83,7 @@ class SettingsScreenTest {
     fun `entering text updates the fields and clicking save triggers callback`() {
         var saveClicked = false
 
-        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase)
+        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities)
         composeTestRule.setContent {
             androidx.compose.material3.MaterialTheme {
                 SettingsScreen(
@@ -116,7 +118,7 @@ class SettingsScreenTest {
 
     @Test
     fun `instant 2-way audio switch is disabled when quick reply is set`() {
-        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase)
+        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities)
         composeTestRule.setContent {
             androidx.compose.material3.MaterialTheme {
                 SettingsScreen(
@@ -142,7 +144,7 @@ class SettingsScreenTest {
 
     @Test
     fun `instant 2-way audio switch can be toggled when quick reply is empty`() {
-        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase)
+        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities)
         composeTestRule.setContent {
             androidx.compose.material3.MaterialTheme {
                 SettingsScreen(
@@ -164,7 +166,7 @@ class SettingsScreenTest {
 
     @Test
     fun `door and call action fields are displayed`() {
-        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase)
+        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities)
         composeTestRule.setContent {
             androidx.compose.material3.MaterialTheme {
                 SettingsScreen(
@@ -186,7 +188,7 @@ class SettingsScreenTest {
 
     @Test
     fun `webrtc provider options are displayed and can be selected`() {
-        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase)
+        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities)
         composeTestRule.setContent {
             androidx.compose.material3.MaterialTheme {
                 SettingsScreen(

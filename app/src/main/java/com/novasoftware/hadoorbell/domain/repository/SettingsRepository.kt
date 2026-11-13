@@ -1,5 +1,6 @@
 package com.novasoftware.hadoorbell.domain.repository
 
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import kotlinx.coroutines.flow.Flow
 
 interface SettingsRepository {
@@ -16,6 +17,7 @@ interface SettingsRepository {
     val answerActionEntityIdFlow: Flow<String?>
     val hangupActionServiceFlow: Flow<String?>
     val hangupActionEntityIdFlow: Flow<String?>
+    val streamButtonLayoutFlow: Flow<StreamButtonLayout?>
 
     suspend fun saveSettings(
         url: String, 
@@ -30,6 +32,7 @@ interface SettingsRepository {
         answerActionService: String = "",
         answerActionEntityId: String = "",
         hangupActionService: String = "",
-        hangupActionEntityId: String = ""
+        hangupActionEntityId: String = "",
+        streamButtonLayout: StreamButtonLayout? = null
     )
 }

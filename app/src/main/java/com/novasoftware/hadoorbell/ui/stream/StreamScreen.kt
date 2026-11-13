@@ -14,20 +14,24 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Call
@@ -35,9 +39,13 @@ import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.ToggleOn
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,6 +63,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,8 +73,11 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -74,6 +87,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.core.utils.BiometricPromptHelper
 import com.novasoftware.hadoorbell.domain.model.LockState
+import com.novasoftware.hadoorbell.domain.model.StreamButton
+import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 
@@ -87,12 +102,21 @@ fun StreamScreen(
     val context = LocalContext.current
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val layout = uiState.streamButtonLayout
+    val topButtons = layout?.top.orEmpty()
+    val bottomButtons = layout?.bottom.orEmpty()
+    val hasCustomBottomButtons = bottomButtons.isNotEmpty()
+    val fixedButtonSize = if (hasCustomBottomButtons) 48.dp else 64.dp
+    val isButtonEnabled: (StreamButton) -> Boolean = { button ->
+        uiState.isStreamButtonLayoutReady && button.id !in uiState.runningStreamButtonIds
+    }
 
     val sheetState = rememberModalBottomSheetState()
 
     val streamUnlockDoorText = stringResource(R.string.stream_unlock_door)
     val streamAuthenticateUnlockText = stringResource(R.string.stream_authenticate_unlock)
     val streamAuthBypassedText = stringResource(R.string.stream_auth_bypassed)
+    val resources by rememberUpdatedState(LocalResources.current)
 
     // Collect one-shot UI events
     LaunchedEffect(Unit) {
@@ -120,6 +144,19 @@ fun StreamScreen(
                         onCryptoFailure = {
                             Toast.makeText(context, streamAuthBypassedText, Toast.LENGTH_LONG).show()
                         }
+                    )
+                }
+                is UiEvent.AuthenticateStreamButton -> {
+                    BiometricPromptHelper.authenticate(
+                        context = context,
+                        title = resources.getString(R.string.stream_button_auth_title, event.button.label),
+                        subtitle = resources.getString(R.string.stream_button_auth_subtitle),
+                        onSuccess = { viewModel.onStreamButtonAuthentication(event, true) },
+                        onCryptoFailure = {
+                            viewModel.onStreamButtonAuthentication(event, false)
+                            Toast.makeText(context, streamAuthBypassedText, Toast.LENGTH_LONG).show()
+                        },
+                        onError = { viewModel.onStreamButtonAuthentication(event, false) }
                     )
                 }
             }
@@ -153,6 +190,7 @@ fun StreamScreen(
 
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.cancelStreamButtonAuthentication()
             viewModel.teardownConnection()
         }
     }
@@ -242,7 +280,8 @@ fun StreamScreen(
                 .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 16.dp)
                 .padding(horizontal = 16.dp)
                 .align(Alignment.TopCenter),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
                 onClick = onNavigateToSettings,
@@ -251,6 +290,15 @@ fun StreamScreen(
                     .background(Color.White.copy(alpha = 0.2f))
             ) {
                 Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
+            }
+
+            if (topButtons.isNotEmpty()) {
+                StreamActionRow(
+                    buttons = topButtons,
+                    enabled = isButtonEnabled,
+                    onButtonClick = viewModel::handleStreamButton,
+                    modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
+                )
             }
 
             IconButton(
@@ -282,59 +330,75 @@ fun StreamScreen(
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .padding(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 32.dp)
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = if (hasCustomBottomButtons) 12.dp else 24.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             // Mute Stream Button
-            FloatingActionButton(
-                onClick = { viewModel.toggleStreamMute() },
-                modifier = Modifier.size(64.dp),
-                containerColor = Color.White.copy(alpha = 0.2f),
-                contentColor = Color.White,
-                shape = CircleShape,
-                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp)
-            ) {
-                Icon(
-                    imageVector = if (uiState.isStreamMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                    contentDescription = if (uiState.isStreamMuted) "Unmute Stream" else "Mute Stream",
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-
-            // Call/End Call Button with Pulse Animation
             Box(
-                modifier = Modifier.size(80.dp),
+                modifier = if (hasCustomBottomButtons) Modifier.weight(1f) else Modifier,
                 contentAlignment = Alignment.Center
             ) {
-                if (uiState.isMicEnabled) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .scale(pulseScale)
-                            .clip(CircleShape)
-                            .background(Color.Red.copy(alpha = 0.3f))
-                    )
-                }
-
                 FloatingActionButton(
-                    onClick = { viewModel.toggleMic(context) },
-                    modifier = Modifier.size(64.dp),
-                    containerColor = if (uiState.isMicEnabled) Color.Red else Color(0xFF4CAF50),
+                    onClick = { viewModel.toggleStreamMute() },
+                    modifier = Modifier.size(fixedButtonSize),
+                    containerColor = Color.White.copy(alpha = 0.2f),
                     contentColor = Color.White,
                     shape = CircleShape,
                     elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp)
                 ) {
                     Icon(
-                        imageVector = if (uiState.isMicEnabled) Icons.Default.CallEnd else Icons.Default.Call,
-                        contentDescription = if (uiState.isMicEnabled) "End Call" else "Call",
+                        imageVector = if (uiState.isStreamMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = if (uiState.isStreamMuted) "Unmute Stream" else "Mute Stream",
                         modifier = Modifier.size(28.dp)
                     )
                 }
             }
 
+            // Call/End Call Button with Pulse Animation
+            Box(
+                modifier = if (hasCustomBottomButtons) Modifier.weight(1f) else Modifier,
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier.size(fixedButtonSize + 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (uiState.isMicEnabled) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .scale(pulseScale)
+                                .clip(CircleShape)
+                                .background(Color.Red.copy(alpha = 0.3f))
+                        )
+                    }
+
+                    FloatingActionButton(
+                        onClick = { viewModel.toggleMic(context) },
+                        modifier = Modifier.size(fixedButtonSize),
+                        containerColor = if (uiState.isMicEnabled) Color.Red else Color(0xFF4CAF50),
+                        contentColor = Color.White,
+                        shape = CircleShape,
+                        elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (uiState.isMicEnabled) Icons.Default.CallEnd else Icons.Default.Call,
+                            contentDescription = if (uiState.isMicEnabled) "End Call" else "Call",
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+            }
+
+            StreamActions(
+                buttons = bottomButtons,
+                enabled = isButtonEnabled,
+                onButtonClick = viewModel::handleStreamButton
+            )
+
             // Quick Reply Button
-            if (uiState.quickReplyEntityId.isNotBlank()) {
+            if (layout == null && uiState.quickReplyEntityId.isNotBlank()) {
                 FloatingActionButton(
                     onClick = { viewModel.openQuickReplySheet() },
                     modifier = Modifier.size(64.dp),
@@ -348,7 +412,7 @@ fun StreamScreen(
             }
 
             // Door Open Button (configurable entity and service)
-            if (uiState.doorEntityId.isNotBlank()) {
+            if (layout == null && uiState.doorEntityId.isNotBlank()) {
                 FloatingActionButton(
                     onClick = { viewModel.handleDoorAction() },
                     modifier = Modifier.size(64.dp),
@@ -366,7 +430,7 @@ fun StreamScreen(
             }
 
             // Lock/Unlock Button
-            if (uiState.doorEntityId.isBlank() && uiState.lockEntityId.isNotBlank()) {
+            if (layout == null && uiState.doorEntityId.isBlank() && uiState.lockEntityId.isNotBlank()) {
                 val (lockIcon, lockColor) = when (uiState.lockState) {
                     LockState.Unlocked -> Icons.Default.LockOpen to Color.Red.copy(alpha = 0.8f)
                     LockState.Locked -> Icons.Default.Lock to Color.White.copy(alpha = 0.2f)
@@ -409,7 +473,7 @@ fun StreamScreen(
         }
     }
 
-    if (uiState.showQuickReplySheet) {
+    if (layout == null && uiState.showQuickReplySheet) {
         ModalBottomSheet(
             onDismissRequest = { viewModel.dismissQuickReplySheet() },
             sheetState = sheetState,
@@ -466,6 +530,77 @@ fun StreamScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StreamActionRow(
+    buttons: List<StreamButton>,
+    enabled: (StreamButton) -> Boolean,
+    onButtonClick: (StreamButton) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        StreamActions(buttons, enabled, onButtonClick)
+    }
+}
+
+@Composable
+private fun RowScope.StreamActions(
+    buttons: List<StreamButton>,
+    enabled: (StreamButton) -> Boolean,
+    onButtonClick: (StreamButton) -> Unit
+) {
+    buttons.forEach { button ->
+        key(button.id) {
+            Box(
+                modifier = Modifier.weight(1f).padding(horizontal = 2.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                StreamActionButton(
+                    button = button,
+                    enabled = enabled(button),
+                    onClick = { onButtonClick(button) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StreamActionButton(button: StreamButton, enabled: Boolean, onClick: () -> Unit) {
+    val icon = when (button.action) {
+        is StreamButtonAction.Toggle -> Icons.Default.ToggleOn
+        is StreamButtonAction.Press -> Icons.Default.TouchApp
+        is StreamButtonAction.SelectOption -> Icons.AutoMirrored.Filled.List
+        is StreamButtonAction.RunScript -> Icons.Default.PlayArrow
+        is StreamButtonAction.TurnOn -> Icons.Default.PowerSettingsNew
+    }
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.widthIn(max = 88.dp).fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = Color.White.copy(alpha = 0.2f),
+        contentColor = Color.White.copy(alpha = if (enabled) 1f else 0.5f)
+    ) {
+        Column(
+            modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 4.dp, vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+            Text(
+                text = button.label,
+                style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

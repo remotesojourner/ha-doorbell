@@ -12,7 +12,11 @@ class AuthInterceptor @Inject constructor(
     private val appPreferences: SettingsRepositoryImpl
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
-        val requestBuilder = chain.request().newBuilder()
+        val originalRequest = chain.request()
+        if (originalRequest.tag(DraftHomeAssistantConnection::class.java) != null) {
+            return chain.proceed(originalRequest)
+        }
+        val requestBuilder = originalRequest.newBuilder()
 
         val token = runBlocking { appPreferences.haTokenFlow.first() }
         val baseUrl = runBlocking { appPreferences.haUrlFlow.first() }

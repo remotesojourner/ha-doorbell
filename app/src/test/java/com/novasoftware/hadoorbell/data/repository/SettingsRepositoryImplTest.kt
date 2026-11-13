@@ -3,9 +3,13 @@ package com.novasoftware.hadoorbell.data.repository
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.novasoftware.hadoorbell.domain.model.StreamButton
+import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -92,5 +96,38 @@ class SettingsRepositoryImplTest {
         assertEquals("", appPreferences.doorServiceFlow.first())
         assertEquals("", appPreferences.answerActionServiceFlow.first())
         assertEquals("", appPreferences.hangupActionServiceFlow.first())
+        assertNull(appPreferences.streamButtonLayoutFlow.first())
+    }
+
+    @Test
+    fun `custom layouts preserve order and protected actions while disabled`() = runTest {
+        val unlock = StreamButton(
+            "unlock", "Unlock", StreamButtonAction.TurnOn("switch.door_relay"),
+            requiresAuthentication = true
+        )
+        val light = StreamButton("light", "Porch light", StreamButtonAction.Toggle("light.porch"))
+        val reply = StreamButton(
+            "reply", "Leave at door", StreamButtonAction.SelectOption("select.reply", "Leave at door")
+        )
+        val layout = StreamButtonLayout(top = listOf(light, unlock), bottom = listOf(reply), enabled = false)
+
+        appPreferences.saveSettings(
+            "https://home.local", "token", "camera", "", "lock.front", false,
+            streamButtonLayout = layout
+        )
+
+        assertEquals(layout, appPreferences.streamButtonLayoutFlow.first())
+        assertEquals("lock.front", appPreferences.lockEntityIdFlow.first())
+    }
+
+    @Test
+    fun `an explicitly empty custom layout does not fall back to original controls`() = runTest {
+        val layout = StreamButtonLayout()
+        appPreferences.saveSettings(
+            "https://home.local", "token", "camera", "", "lock.front", false,
+            streamButtonLayout = layout
+        )
+
+        assertEquals(layout, appPreferences.streamButtonLayoutFlow.first())
     }
 }

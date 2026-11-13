@@ -5,9 +5,13 @@ import com.novasoftware.hadoorbell.MainDispatcherRule
 import com.novasoftware.hadoorbell.data.repository.SettingsRepositoryImpl
 import com.novasoftware.hadoorbell.domain.repository.HomeAssistantRepository
 import com.novasoftware.hadoorbell.domain.usecase.CallActionUseCase
+import com.novasoftware.hadoorbell.domain.usecase.ExecuteStreamButtonUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSelectOptionsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.LockDoorUseCase
 import com.novasoftware.hadoorbell.domain.model.LockState
+import com.novasoftware.hadoorbell.domain.model.StreamButton
+import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.usecase.OpenDoorUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SendQuickReplyUseCase
 import com.novasoftware.hadoorbell.domain.usecase.UnlockDoorUseCase
@@ -75,6 +79,7 @@ class StreamViewModelTest {
             every { answerActionEntityIdFlow } returns flowOf("")
             every { hangupActionServiceFlow } returns flowOf("")
             every { hangupActionEntityIdFlow } returns flowOf("")
+            every { streamButtonLayoutFlow } returns flowOf(null)
         }
         
         repository = mockk(relaxed = true) {
@@ -106,7 +111,7 @@ class StreamViewModelTest {
         viewModel = StreamViewModel(
             context, appPreferences, repository, webRtcClientFactory, webRtcManagerFactory,
             lockDoorUseCase, unlockDoorUseCase, getSelectOptionsUseCase, sendQuickReplyUseCase,
-            openDoorUseCase, callActionUseCase
+            openDoorUseCase, callActionUseCase, ExecuteStreamButtonUseCase(repository)
         )
     }
 
@@ -141,6 +146,73 @@ class StreamViewModelTest {
         assertEquals("switch.doorbell_talk", uiState.answerActionEntityId)
         assertEquals("switch.turn_off", uiState.hangupActionService)
         assertEquals("switch.doorbell_talk", uiState.hangupActionEntityId)
+    }
+
+    @Test
+    fun `returning to the stream uses the enabled layout and skips legacy lock lookup`() = runTest {
+        val button = StreamButton("light", "Porch light", StreamButtonAction.Toggle("light.porch"))
+        val layout = StreamButtonLayout(top = listOf(button))
+        every { appPreferences.streamButtonLayoutFlow } returns flowOf(layout.copy(enabled = false))
+        every { appPreferences.instantTwoWayAudioFlow } returns flowOf(true)
+
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.uiState.value.streamButtonLayout)
+        assertEquals(LockState.Locked, viewModel.uiState.value.lockState)
+        assertFalse(viewModel.uiState.value.isMicEnabled)
+        viewModel.teardownConnection()
+        advanceUntilIdle()
+
+        every { appPreferences.streamButtonLayoutFlow } returns flowOf(layout)
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+
+        assertEquals(layout, viewModel.uiState.value.streamButtonLayout)
+        assertTrue(viewModel.uiState.value.isMicEnabled)
+        coVerify(exactly = 1) { repository.getEntityState("lock.front") }
+    }
+
+    @Test
+    fun `custom actions require the matching authentication request only when protected`() = runTest {
+        val toggle = StreamButton("light", "Porch light", StreamButtonAction.Toggle("light.porch"))
+        val press = StreamButton(
+            id = "door",
+            label = "Open door",
+            action = StreamButtonAction.Press("button.door"),
+            requiresAuthentication = true
+        )
+        every { appPreferences.streamButtonLayoutFlow } returns
+            flowOf(StreamButtonLayout(top = listOf(toggle), bottom = listOf(press)))
+        val requests = mutableListOf<UiEvent.AuthenticateStreamButton>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiEvent.collect { if (it is UiEvent.AuthenticateStreamButton) requests.add(it) }
+        }
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+
+        viewModel.handleStreamButton(toggle)
+        viewModel.handleStreamButton(press)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.callService("light", "toggle", "light.porch") }
+        coVerify(exactly = 0) { repository.callService("button", "press", "button.door") }
+        val firstRequest = requests.single()
+        assertEquals(press, firstRequest.button)
+
+        viewModel.cancelStreamButtonAuthentication()
+        viewModel.handleStreamButton(press)
+        advanceUntilIdle()
+        val secondRequest = requests.last()
+
+        viewModel.onStreamButtonAuthentication(firstRequest, true)
+        advanceUntilIdle()
+        coVerify(exactly = 0) { repository.callService("button", "press", "button.door") }
+
+        viewModel.onStreamButtonAuthentication(secondRequest, true)
+        viewModel.onStreamButtonAuthentication(secondRequest, true)
+        advanceUntilIdle()
+        coVerify(exactly = 1) { repository.callService("button", "press", "button.door") }
     }
 
     @Test

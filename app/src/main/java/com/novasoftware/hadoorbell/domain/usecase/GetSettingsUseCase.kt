@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import com.novasoftware.hadoorbell.domain.repository.SettingsRepository
 import com.novasoftware.hadoorbell.domain.model.Settings
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import javax.inject.Inject
 
 class GetSettingsUseCase @Inject constructor(
@@ -23,7 +24,8 @@ class GetSettingsUseCase @Inject constructor(
             repository.answerActionServiceFlow,
             repository.answerActionEntityIdFlow,
             repository.hangupActionServiceFlow,
-            repository.hangupActionEntityIdFlow
+            repository.hangupActionEntityIdFlow,
+            repository.streamButtonLayoutFlow
         ) { args: Array<Any?> ->
             Settings(
                 url = args[0] as? String ?: "",
@@ -38,7 +40,8 @@ class GetSettingsUseCase @Inject constructor(
                 answerActionService = args[9] as? String ?: "",
                 answerActionEntityId = args[10] as? String ?: "",
                 hangupActionService = args[11] as? String ?: "",
-                hangupActionEntityId = args[12] as? String ?: ""
+                hangupActionEntityId = args[12] as? String ?: "",
+                streamButtonLayout = args[13] as? StreamButtonLayout
             )
         }
     }

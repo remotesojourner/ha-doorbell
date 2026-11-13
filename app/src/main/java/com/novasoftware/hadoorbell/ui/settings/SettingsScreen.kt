@@ -29,18 +29,22 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.core.utils.BiometricPromptHelper
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,22 +59,30 @@ fun SettingsScreen(
     if (!uiState.isLoaded) return
 
     val context = LocalContext.current
-    val callActionsAuthTitle = stringResource(R.string.settings_call_actions_auth_title)
-    val callActionsAuthSubtitle = stringResource(R.string.settings_call_actions_auth_subtitle)
-    val callActionsAuthError = stringResource(R.string.settings_call_actions_auth_error)
+    val controlsAuthTitle = stringResource(R.string.settings_controls_auth_title)
+    val controlsAuthSubtitle = stringResource(R.string.settings_controls_auth_subtitle)
+    val controlsAuthError = stringResource(R.string.settings_controls_auth_error)
+    val entityLoadError = when (uiState.entityLoadError) {
+        EntityLoadError.MissingConnection -> stringResource(R.string.settings_entities_missing_connection)
+        EntityLoadError.ChangedServer -> stringResource(R.string.settings_entities_changed_server)
+        EntityLoadError.InvalidConnection -> stringResource(R.string.settings_entities_invalid_connection)
+        EntityLoadError.AuthenticationFailed -> stringResource(R.string.settings_entities_auth_error)
+        EntityLoadError.RequestFailed -> stringResource(R.string.settings_entities_request_error)
+        null -> null
+    }
 
     val saveSettings = {
-        if (viewModel.callActionsChanged()) {
+        if (viewModel.callActionsChanged() || viewModel.protectedButtonsChanged()) {
             BiometricPromptHelper.authenticate(
                 context = context,
-                title = callActionsAuthTitle,
-                subtitle = callActionsAuthSubtitle,
+                title = controlsAuthTitle,
+                subtitle = controlsAuthSubtitle,
                 onSuccess = { viewModel.saveSettings(onSave) },
                 onCryptoFailure = {
-                    Toast.makeText(context, callActionsAuthError, Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, controlsAuthError, Toast.LENGTH_LONG).show()
                 },
                 onError = {
-                    Toast.makeText(context, callActionsAuthError, Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, controlsAuthError, Toast.LENGTH_LONG).show()
                 }
             )
         } else {
@@ -244,12 +256,9 @@ fun SettingsScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                     
-                    Text(
-                        stringResource(R.string.settings_integrations_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
+                    val customLayout = uiState.streamButtonLayout?.takeIf { it.enabled }
+                    val instantAudioAvailable =
+                        customLayout != null || uiState.quickReplyEntityId.isBlank()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -257,75 +266,53 @@ fun SettingsScreen(
                     ) {
                         Text(
                             stringResource(R.string.settings_instant_2way),
+                            modifier = Modifier.weight(1f).padding(end = 12.dp),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = if (uiState.quickReplyEntityId.isBlank()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            color = if (instantAudioAvailable) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                         )
                         Switch(
-                            checked = uiState.instantTwoWayAudio,
+                            checked = uiState.instantTwoWayAudio && instantAudioAvailable,
                             onCheckedChange = { viewModel.updateInstantTwoWayAudio(it) },
-                            enabled = uiState.quickReplyEntityId.isBlank(),
+                            enabled = instantAudioAvailable,
                             modifier = Modifier.testTag("instant_2way_switch")
                         )
                     }
 
-                    OutlinedTextField(
-                        value = uiState.quickReplyEntityId,
-                        onValueChange = { viewModel.updateQuickReplyEntityId(it) },
-                        label = { Text(stringResource(R.string.settings_quick_reply_id)) },
-                        placeholder = { Text("select.doorbell_quick_reply") },
+                    val customButtonsLabel = stringResource(R.string.settings_use_custom_buttons)
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        value = uiState.lockEntityId,
-                        onValueChange = { viewModel.updateLockEntityId(it) },
-                        label = { Text(stringResource(R.string.settings_door_lock_id)) },
-                        placeholder = { Text("lock.front_door") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
-                    )
-
-                    Text(
-                        stringResource(R.string.settings_door_open),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    Text(
-                        stringResource(R.string.settings_door_open_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    OutlinedTextField(
-                        value = uiState.doorEntityId,
-                        onValueChange = { viewModel.updateDoorEntityId(it) },
-                        label = { Text(stringResource(R.string.settings_door_entity)) },
-                        placeholder = { Text("switch.door_relay") },
-                        modifier = Modifier.fillMaxWidth().testTag("door_entity_input"),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        value = uiState.doorService,
-                        onValueChange = { viewModel.updateDoorService(it) },
-                        label = { Text(stringResource(R.string.settings_door_service)) },
-                        placeholder = { Text("switch.turn_on") },
-                        modifier = Modifier.fillMaxWidth().testTag("door_service_input"),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
-                    )
-
-                    Text(
-                        stringResource(R.string.settings_door_service_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            customButtonsLabel,
+                            modifier = Modifier.weight(1f).padding(end = 12.dp),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Switch(
+                            checked = customLayout != null,
+                            onCheckedChange = viewModel::setCustomButtonsEnabled,
+                            modifier = Modifier
+                                .testTag("custom_buttons_switch")
+                                .semantics { contentDescription = customButtonsLabel }
+                        )
+                    }
+                    if (customLayout != null) {
+                        StreamButtonEditor(
+                            layout = customLayout,
+                            entities = uiState.entities,
+                            isLoadingEntities = uiState.isLoadingEntities,
+                            entityLoadError = entityLoadError,
+                            onLoadEntities = viewModel::loadEntities,
+                            onLayoutChange = viewModel::updateStreamButtonLayout
+                        )
+                    } else {
+                        LegacyStreamControls(
+                            state = uiState,
+                            entityLoadError = entityLoadError,
+                            viewModel = viewModel
+                        )
+                    }
 
                     Text(
                         stringResource(R.string.settings_call_actions),
@@ -350,14 +337,16 @@ fun SettingsScreen(
                         singleLine = true
                     )
 
-                    OutlinedTextField(
+                    EntityTargetField(
                         value = uiState.answerActionEntityId,
-                        onValueChange = { viewModel.updateAnswerActionEntityId(it) },
-                        label = { Text(stringResource(R.string.settings_answer_entity)) },
-                        placeholder = { Text("switch.doorbell_talk") },
-                        modifier = Modifier.fillMaxWidth().testTag("answer_action_entity_input"),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
+                        onValueChange = viewModel::updateAnswerActionEntityId,
+                        label = stringResource(R.string.settings_answer_entity),
+                        placeholder = "switch.doorbell_talk",
+                        entities = uiState.entities,
+                        isLoading = uiState.isLoadingEntities,
+                        loadError = entityLoadError,
+                        onLoad = viewModel::loadEntities,
+                        modifier = Modifier.testTag("answer_action_entity_input")
                     )
 
                     OutlinedTextField(
@@ -370,14 +359,16 @@ fun SettingsScreen(
                         singleLine = true
                     )
 
-                    OutlinedTextField(
+                    EntityTargetField(
                         value = uiState.hangupActionEntityId,
-                        onValueChange = { viewModel.updateHangupActionEntityId(it) },
-                        label = { Text(stringResource(R.string.settings_hangup_entity)) },
-                        placeholder = { Text("switch.doorbell_talk") },
-                        modifier = Modifier.fillMaxWidth().testTag("hangup_action_entity_input"),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
+                        onValueChange = viewModel::updateHangupActionEntityId,
+                        label = stringResource(R.string.settings_hangup_entity),
+                        placeholder = "switch.doorbell_talk",
+                        entities = uiState.entities,
+                        isLoading = uiState.isLoadingEntities,
+                        loadError = entityLoadError,
+                        onLoad = viewModel::loadEntities,
+                        modifier = Modifier.testTag("hangup_action_entity_input")
                     )
                 }
             }
@@ -385,5 +376,120 @@ fun SettingsScreen(
             // Padding for FAB
             Spacer(modifier = Modifier.height(80.dp))
         }
+    }
+}
+
+@Composable
+private fun LegacyStreamControls(
+    state: SettingsUiState,
+    entityLoadError: String?,
+    viewModel: SettingsViewModel
+) {
+    EntityTargetField(
+        value = state.quickReplyEntityId,
+        onValueChange = viewModel::updateQuickReplyEntityId,
+        label = stringResource(R.string.settings_quick_reply_id),
+        placeholder = "select.doorbell_quick_reply",
+        entities = state.entities.filter { it.domain == "select" || it.domain == "input_select" },
+        isLoading = state.isLoadingEntities,
+        loadError = entityLoadError,
+        onLoad = viewModel::loadEntities
+    )
+
+    EntityTargetField(
+        value = state.lockEntityId,
+        onValueChange = viewModel::updateLockEntityId,
+        label = stringResource(R.string.settings_door_lock_id),
+        placeholder = "lock.front_door",
+        entities = state.entities.filter { it.domain == "lock" },
+        isLoading = state.isLoadingEntities,
+        loadError = entityLoadError,
+        onLoad = viewModel::loadEntities
+    )
+
+    Text(
+        stringResource(R.string.settings_door_open),
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold
+    )
+    Text(
+        stringResource(R.string.settings_door_open_desc),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    EntityTargetField(
+        value = state.doorEntityId,
+        onValueChange = viewModel::updateDoorEntityId,
+        label = stringResource(R.string.settings_door_entity),
+        placeholder = "switch.door_relay",
+        entities = state.entities,
+        isLoading = state.isLoadingEntities,
+        loadError = entityLoadError,
+        onLoad = viewModel::loadEntities,
+        modifier = Modifier.testTag("door_entity_input")
+    )
+    OutlinedTextField(
+        value = state.doorService,
+        onValueChange = viewModel::updateDoorService,
+        label = { Text(stringResource(R.string.settings_door_service)) },
+        placeholder = { Text("switch.turn_on") },
+        modifier = Modifier.fillMaxWidth().testTag("door_service_input"),
+        shape = RoundedCornerShape(12.dp),
+        singleLine = true
+    )
+    Text(
+        stringResource(R.string.settings_door_service_desc),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
+private fun EntityTargetField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    placeholder: String,
+    entities: List<HomeAssistantEntity>,
+    isLoading: Boolean,
+    loadError: String?,
+    onLoad: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    val browseLabel = stringResource(R.string.settings_browse_entity_target, label)
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        placeholder = { Text(placeholder) },
+        trailingIcon = {
+            TextButton(
+                modifier = Modifier.semantics { contentDescription = browseLabel },
+                onClick = {
+                    showPicker = true
+                    onLoad()
+                }
+            ) {
+                Text(stringResource(R.string.settings_browse_entities))
+            }
+        },
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        singleLine = true
+    )
+    if (showPicker) {
+        HomeAssistantEntityPicker(
+            entities = entities,
+            isLoading = isLoading,
+            loadError = loadError,
+            onRetry = onLoad,
+            onDismiss = { showPicker = false },
+            onSelect = {
+                onValueChange(it.entityId)
+                showPicker = false
+            },
+            selectedEntityId = value
+        )
     }
 }

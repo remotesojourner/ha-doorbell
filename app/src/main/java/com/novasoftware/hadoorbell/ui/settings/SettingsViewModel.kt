@@ -2,31 +2,38 @@ package com.novasoftware.hadoorbell.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.novasoftware.hadoorbell.domain.model.Settings
+import com.novasoftware.hadoorbell.domain.model.StreamButton
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
+import com.novasoftware.hadoorbell.domain.model.normalizeHomeAssistantUrl
+import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantEntitiesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSettingsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SaveSettingsUseCase
-import com.novasoftware.hadoorbell.domain.model.Settings
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import retrofit2.HttpException
 import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val getSettingsUseCase: GetSettingsUseCase,
-    private val saveSettingsUseCase: SaveSettingsUseCase
+    private val saveSettingsUseCase: SaveSettingsUseCase,
+    private val getHomeAssistantEntities: GetHomeAssistantEntitiesUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
-    private var savedAnswerActionService = ""
-    private var savedAnswerActionEntityId = ""
-    private var savedHangupActionService = ""
-    private var savedHangupActionEntityId = ""
+    private var savedSettings = Settings()
+    private var entityLoadJob: Job? = null
 
     init {
         loadSettings()
@@ -35,10 +42,7 @@ class SettingsViewModel @Inject constructor(
     private fun loadSettings() {
         viewModelScope.launch {
             val settings = getSettingsUseCase().first()
-            savedAnswerActionService = settings.answerActionService
-            savedAnswerActionEntityId = settings.answerActionEntityId
-            savedHangupActionService = settings.hangupActionService
-            savedHangupActionEntityId = settings.hangupActionEntityId
+            savedSettings = settings
             _uiState.update {
                 it.copy(
                     url = settings.url,
@@ -54,14 +58,80 @@ class SettingsViewModel @Inject constructor(
                     answerActionEntityId = settings.answerActionEntityId,
                     hangupActionService = settings.hangupActionService,
                     hangupActionEntityId = settings.hangupActionEntityId,
+                    streamButtonLayout = settings.streamButtonLayout,
                     isLoaded = true
                 )
             }
         }
     }
 
-    fun updateUrl(value: String) { _uiState.update { it.copy(url = value) } }
-    fun updateToken(value: String) { _uiState.update { it.copy(token = value) } }
+    fun updateUrl(value: String) = updateConnection { it.copy(url = value) }
+    fun updateToken(value: String) = updateConnection { it.copy(token = value) }
+
+    private fun updateConnection(update: (SettingsUiState) -> SettingsUiState) {
+        entityLoadJob?.cancel()
+        _uiState.update {
+            update(it).copy(entities = emptyList(), isLoadingEntities = false, entityLoadError = null)
+        }
+    }
+
+    fun loadEntities() {
+        val state = _uiState.value
+        if (state.isLoadingEntities) return
+
+        val error = connectionError(state)
+        if (error != null) {
+            _uiState.update { it.copy(entityLoadError = error) }
+            return
+        }
+
+        _uiState.update { it.copy(isLoadingEntities = true, entityLoadError = null) }
+        entityLoadJob = viewModelScope.launch {
+            getHomeAssistantEntities(state.url, state.token).fold(
+                onSuccess = { entities ->
+                    _uiState.update { it.copy(entities = entities, isLoadingEntities = false) }
+                },
+                onFailure = { failure ->
+                    val loadError = when {
+                        failure is IllegalArgumentException -> EntityLoadError.InvalidConnection
+                        failure is HttpException && failure.code() in listOf(401, 403) ->
+                            EntityLoadError.AuthenticationFailed
+                        else -> EntityLoadError.RequestFailed
+                    }
+                    _uiState.update { it.copy(isLoadingEntities = false, entityLoadError = loadError) }
+                }
+            )
+        }
+    }
+
+    private fun connectionError(state: SettingsUiState): EntityLoadError? {
+        if (state.url.isBlank() || state.token.isBlank()) return EntityLoadError.MissingConnection
+        val draftUrl = normalizeHomeAssistantUrl(state.url).toHttpUrlOrNull()
+            ?: return EntityLoadError.InvalidConnection
+        val savedUrl = normalizeHomeAssistantUrl(savedSettings.url).toHttpUrlOrNull()
+        if (savedUrl != null && state.token.trim() == savedSettings.token.trim() &&
+            draftUrl.origin() != savedUrl.origin()
+        ) {
+            return EntityLoadError.ChangedServer
+        }
+        return null
+    }
+
+    private fun HttpUrl.origin(): String = newBuilder().username("").password("")
+        .encodedPath("/").query(null).fragment(null).build().toString()
+
+    fun setCustomButtonsEnabled(enabled: Boolean) {
+        _uiState.update {
+            val layout = it.streamButtonLayout
+            it.copy(streamButtonLayout = layout?.copy(enabled = enabled)
+                ?: StreamButtonLayout().takeIf { enabled })
+        }
+    }
+
+    fun updateStreamButtonLayout(layout: StreamButtonLayout) {
+        _uiState.update { it.copy(streamButtonLayout = layout) }
+    }
+
     fun updateStreamSource(value: String) { _uiState.update { it.copy(streamSource = value) } }
     fun updateQuickReplyEntityId(value: String) {
         _uiState.update { 
@@ -83,11 +153,23 @@ class SettingsViewModel @Inject constructor(
 
     fun callActionsChanged(): Boolean {
         val currentState = _uiState.value
-        return currentState.answerActionService != savedAnswerActionService ||
-            currentState.answerActionEntityId != savedAnswerActionEntityId ||
-            currentState.hangupActionService != savedHangupActionService ||
-            currentState.hangupActionEntityId != savedHangupActionEntityId
+        return currentState.answerActionService != savedSettings.answerActionService ||
+            currentState.answerActionEntityId != savedSettings.answerActionEntityId ||
+            currentState.hangupActionService != savedSettings.hangupActionService ||
+            currentState.hangupActionEntityId != savedSettings.hangupActionEntityId
     }
+
+    fun protectedButtonsChanged(): Boolean {
+        val original = savedSettings.streamButtonLayout.buttons()
+        val current = _uiState.value.streamButtonLayout.buttons()
+        return original.filter(StreamButton::requiresAuthentication).any { saved ->
+            current.none { it.id == saved.id && it.action == saved.action && it.requiresAuthentication } ||
+                current.any { it.action == saved.action && !it.requiresAuthentication && it !in original }
+        }
+    }
+
+    private fun StreamButtonLayout?.buttons(): List<StreamButton> =
+        if (this == null) emptyList() else top + bottom
 
     fun saveSettings(onComplete: () -> Unit) {
         viewModelScope.launch {
@@ -105,13 +187,11 @@ class SettingsViewModel @Inject constructor(
                 answerActionService = currentState.answerActionService,
                 answerActionEntityId = currentState.answerActionEntityId,
                 hangupActionService = currentState.hangupActionService,
-                hangupActionEntityId = currentState.hangupActionEntityId
+                hangupActionEntityId = currentState.hangupActionEntityId,
+                streamButtonLayout = currentState.streamButtonLayout
             )
             saveSettingsUseCase(settings)
-            savedAnswerActionService = settings.answerActionService
-            savedAnswerActionEntityId = settings.answerActionEntityId
-            savedHangupActionService = settings.hangupActionService
-            savedHangupActionEntityId = settings.hangupActionEntityId
+            savedSettings = settings
             onComplete()
         }
     }
