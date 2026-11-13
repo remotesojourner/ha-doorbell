@@ -8,6 +8,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isSelected
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -31,6 +36,42 @@ import org.robolectric.annotation.Config
 class StreamButtonEditorTest {
     @get:Rule
     val composeTestRule = createComposeRule()
+
+    @Test
+    fun `the saved lock action is visible and selected when its dropdown opens`() {
+        val lock = StreamButton(
+            "front-lock",
+            StreamButtonAction.DoorLock("lock.front"),
+            requiresAuthentication = true,
+            entityName = "Front door"
+        )
+        val otherEntities = listOf(
+            HomeAssistantEntity("lock.front", "Front door"),
+            HomeAssistantEntity("switch.front", "Front relay")
+        )
+        composeTestRule.setContent {
+            MaterialTheme {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    StreamButtonEditor(
+                        layout = StreamButtonLayout(top = listOf(lock)),
+                        entities = otherEntities,
+                        isLoadingEntities = false,
+                        entityLoadError = null,
+                        onLoadEntities = {},
+                        onLayoutChange = {}
+                    )
+                }
+            }
+        }
+
+        composeTestRule.onNodeWithText("Front door").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Home Assistant entity").assertExists()
+        composeTestRule.onNode(hasText("Lock or unlock") and hasAnyAncestor(isDialog())).performClick()
+        composeTestRule.onNode(hasText("Lock or unlock") and isSelected()).assertIsDisplayed().performClick()
+        composeTestRule.onNode(hasText("Front door") and hasAnyAncestor(isDialog())).performClick()
+        composeTestRule.onNodeWithText("lock.front").assertExists()
+        composeTestRule.onNodeWithText("Front relay").assertDoesNotExist()
+    }
 
     @Test
     fun `adding a select button saves the chosen entity and option`() {

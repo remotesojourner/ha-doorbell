@@ -17,7 +17,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
@@ -48,6 +50,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.novasoftware.hadoorbell.R
@@ -374,7 +378,8 @@ private fun EditStreamButtonDialog(
                 EditorChoice(
                     label = stringResource(R.string.stream_button_action),
                     displayValue = stringResource(kind.label),
-                    choices = ActionKind.entries,
+                    choices = listOf(kind) + ActionKind.entries.filterNot { it == kind },
+                    selectedChoice = kind,
                     choiceLabel = { stringResource(it.label) },
                     onSelect = { nextKind ->
                         if (nextKind != kind) {
@@ -391,18 +396,24 @@ private fun EditStreamButtonDialog(
                     }
                 )
 
-                OutlinedButton(
-                    onClick = {
-                        onLoadEntities()
-                        showPicker = true
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                Column {
                     Text(
-                        text = currentEntityName ?: entityId ?: stringResource(R.string.stream_button_choose_entity),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        stringResource(R.string.stream_button_entity),
+                        style = MaterialTheme.typography.labelMedium
                     )
+                    OutlinedButton(
+                        onClick = {
+                            onLoadEntities()
+                            showPicker = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = currentEntityName ?: entityId ?: stringResource(R.string.stream_button_choose_entity),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
                 if (kind == ActionKind.SELECT_OPTION && entityId != null) {
@@ -412,6 +423,7 @@ private fun EditStreamButtonDialog(
                             label = stringResource(R.string.stream_button_option),
                             displayValue = option ?: stringResource(R.string.stream_button_choose_option),
                             choices = options,
+                            selectedChoice = option,
                             choiceLabel = { it },
                             onSelect = { option = it }
                         )
@@ -624,6 +636,7 @@ private fun <T> EditorChoice(
     label: String,
     displayValue: String,
     choices: List<T>,
+    selectedChoice: T?,
     choiceLabel: @Composable (T) -> String,
     onSelect: (T) -> Unit
 ) {
@@ -632,7 +645,13 @@ private fun <T> EditorChoice(
         Text(label, style = MaterialTheme.typography.labelMedium)
         Box {
             OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(displayValue, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    displayValue,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
             }
             DropdownMenu(
                 expanded = expanded,
@@ -640,8 +659,13 @@ private fun <T> EditorChoice(
                 modifier = Modifier.heightIn(max = 320.dp)
             ) {
                 choices.forEach { choice ->
+                    val isSelected = choice == selectedChoice
                     DropdownMenuItem(
                         text = { Text(choiceLabel(choice)) },
+                        modifier = Modifier.semantics { selected = isSelected },
+                        trailingIcon = if (isSelected) {
+                            { Icon(Icons.Default.Check, contentDescription = null) }
+                        } else null,
                         onClick = {
                             expanded = false
                             onSelect(choice)

@@ -47,6 +47,7 @@
     <string name="stream_button_door_service_default">Uses %1$s when left empty.</string>
     <string name="stream_button_door_service_hint">Enter a service in domain.service format.</string>
     <string name="stream_button_choose_entity">Choose a Home Assistant entity</string>
+    <string name="stream_button_entity">Home Assistant entity</string>
     <string name="stream_button_entity_search">Search by name or entity ID</string>
     <string name="stream_button_loading_entities">Loading entities…</string>
     <string name="stream_button_retry">Retry</string>
