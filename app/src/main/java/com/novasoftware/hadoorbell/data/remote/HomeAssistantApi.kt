@@ -35,22 +35,22 @@ data class SetSelectOptionRequest(
     val option: String
 )
 
-/** Marks a discovery request that must use the supplied URL and authorization header. */
-object DraftHomeAssistantConnection
+/** Marks a request that already has the intended Home Assistant URL and credentials. */
+object ExplicitHomeAssistantConnection
 
 interface HomeAssistantApi {
     @GET
     suspend fun getEntities(
         @Url url: HttpUrl,
         @Header("Authorization") authorization: String,
-        @Tag connection: DraftHomeAssistantConnection
+        @Tag connection: ExplicitHomeAssistantConnection
     ): List<EntityStateResponse>
 
     @GET
     suspend fun getServices(
         @Url url: HttpUrl,
         @Header("Authorization") authorization: String,
-        @Tag connection: DraftHomeAssistantConnection
+        @Tag connection: ExplicitHomeAssistantConnection
     ): List<ServiceDomainResponse>
 
     @GET("api/states/{entity_id}")

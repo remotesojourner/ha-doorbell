@@ -1,6 +1,7 @@
 package com.novasoftware.hadoorbell
 
 import com.novasoftware.hadoorbell.data.repository.SettingsRepositoryImpl
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantConnection
 import com.novasoftware.hadoorbell.ui.Navigation
 import io.mockk.every
 import io.mockk.mockk
@@ -37,8 +38,8 @@ class MainViewModelTest {
     @Test
     fun `when preferences are set, start destination is stream`() = runTest {
         // Arrange
-        every { appPreferences.haUrlFlow } returns flowOf("http://ha.local")
-        every { appPreferences.haTokenFlow } returns flowOf("token")
+        every { appPreferences.homeAssistantConnectionFlow } returns
+            flowOf(HomeAssistantConnection("http://ha.local", "token"))
         every { appPreferences.streamSourceFlow } returns flowOf("camera.front")
 
         // Act
@@ -52,8 +53,7 @@ class MainViewModelTest {
     @Test
     fun `when preferences are missing, start destination is settings`() = runTest {
         // Arrange
-        every { appPreferences.haUrlFlow } returns flowOf("")
-        every { appPreferences.haTokenFlow } returns flowOf("token")
+        every { appPreferences.homeAssistantConnectionFlow } returns flowOf(HomeAssistantConnection("", "token"))
         every { appPreferences.streamSourceFlow } returns flowOf("camera.front")
 
         // Act

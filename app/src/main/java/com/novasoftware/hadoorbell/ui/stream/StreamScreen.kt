@@ -96,6 +96,7 @@ fun StreamScreen(
 
     val authFailedText = stringResource(R.string.authentication_unavailable)
     val resources by rememberUpdatedState(LocalResources.current)
+    val navigateToSettings by rememberUpdatedState(onNavigateToSettings)
 
     // Collect one-shot UI events
     LaunchedEffect(Unit) {
@@ -108,28 +109,42 @@ fun StreamScreen(
                         if (event.long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
                     ).show()
                 }
-                is UiEvent.AuthenticateStreamButton -> {
-                    val action = event.button.action
+                is UiEvent.Authentication -> {
+                    val button = (event as? UiEvent.AuthenticateStreamButton)?.button
+                    val action = button?.action
+                    val openingSettings = event is UiEvent.AuthenticateSettings
+                    fun completeAuthentication(succeeded: Boolean) {
+                        when (event) {
+                            is UiEvent.AuthenticateSettings -> {
+                                if (viewModel.onSettingsAuthentication(event, succeeded)) navigateToSettings()
+                            }
+                            is UiEvent.AuthenticateStreamButton ->
+                                viewModel.onStreamButtonAuthentication(event, succeeded)
+                        }
+                    }
                     BiometricPromptHelper.authenticate(
                         context = context,
-                        title = if (action is StreamButtonAction.DoorLock) {
-                            resources.getString(R.string.stream_unlock_door)
-                        } else {
-                            resources.getString(R.string.stream_button_auth_title, event.button.displayName)
+                        title = when {
+                            openingSettings -> resources.getString(R.string.stream_settings_auth_title)
+                            action is StreamButtonAction.DoorLock -> resources.getString(R.string.stream_unlock_door)
+                            else -> resources.getString(R.string.stream_button_auth_title, button?.displayName)
                         },
                         subtitle = resources.getString(
-                            if (action is StreamButtonAction.DoorLock) R.string.stream_authenticate_unlock
-                            else R.string.stream_button_auth_subtitle
+                            when {
+                                openingSettings -> R.string.stream_settings_auth_subtitle
+                                action is StreamButtonAction.DoorLock -> R.string.stream_authenticate_unlock
+                                else -> R.string.stream_button_auth_subtitle
+                            }
                         ),
-                        allowWithoutScreenLock = action is StreamButtonAction.DoorLock ||
+                        allowWithoutScreenLock = openingSettings || action is StreamButtonAction.DoorLock ||
                             action is StreamButtonAction.CallService && action.doorRelease,
-                        onSuccess = { viewModel.onStreamButtonAuthentication(event, true) },
+                        onSuccess = { completeAuthentication(true) },
                         onCryptoFailure = {
-                            viewModel.onStreamButtonAuthentication(event, false)
+                            completeAuthentication(false)
                             Toast.makeText(context, authFailedText, Toast.LENGTH_LONG).show()
                         },
                         onError = { message ->
-                            viewModel.onStreamButtonAuthentication(event, false)
+                            completeAuthentication(false)
                             message?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                         }
                     )
@@ -165,7 +180,7 @@ fun StreamScreen(
 
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            viewModel.cancelStreamButtonAuthentication()
+            viewModel.cancelAuthentication()
             viewModel.teardownConnection()
         }
     }
@@ -250,8 +265,11 @@ fun StreamScreen(
 
         StreamTopControls(
             uiState = uiState,
-            onSettingsClick = onNavigateToSettings,
-            onCloseClick = onExit,
+            onSettingsClick = viewModel::requestSettingsAuthentication,
+            onCloseClick = {
+                viewModel.cancelAuthentication()
+                onExit()
+            },
             onButtonClick = viewModel::handleStreamButton,
             modifier = Modifier
                 .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 16.dp)
@@ -328,7 +346,7 @@ private fun StreamTopControls(
                                 button = button,
                                 enabled = uiState.canRun(button),
                                 lockState = uiState.lockStates[button.action.entityId] ?: LockState.Unknown,
-                                entityAppearance = uiState.entityAppearances[button.action.entityId],
+                                entityAppearance = uiState.entityAppearances[button.iconEntityId],
                                 onClick = { onButtonClick(button) },
                                 circleSize = 48.dp,
                                 iconSize = 24.dp
@@ -423,7 +441,7 @@ internal fun StreamBottomControls(
                         button = button,
                         enabled = uiState.canRun(button),
                         lockState = uiState.lockStates[button.action.entityId] ?: LockState.Unknown,
-                        entityAppearance = uiState.entityAppearances[button.action.entityId],
+                        entityAppearance = uiState.entityAppearances[button.iconEntityId],
                         onClick = { onButtonClick(button) },
                         circleSize = actionSize,
                         iconSize = 28.dp
@@ -524,8 +542,13 @@ private fun StreamActionButton(
         isLock && lockState == LockState.Unknown -> Color.DarkGray.copy(alpha = 0.8f)
         else -> Color.White.copy(alpha = 0.2f)
     }
-    val lockSemantics = if (lockDescription == null) Modifier else Modifier.semantics {
-        stateDescription = lockDescription
+    val entityDescription = entityAppearance?.state?.takeIf {
+        it.isNotBlank() && !button.stateEntityId.isNullOrBlank() &&
+            (!isLock || button.iconEntityId != button.action.entityId)
+    }
+    val description = listOfNotNull(lockDescription, entityDescription).joinToString()
+    val stateSemantics = if (description.isEmpty()) Modifier else Modifier.semantics {
+        stateDescription = description
     }
     val resolvedIcon = resolveStreamButtonIcon(button, entityAppearance)
     val rotation = if (resolvedIcon == null && isLock &&
@@ -543,7 +566,7 @@ private fun StreamActionButton(
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.size(circleSize).then(lockSemantics),
+        modifier = Modifier.size(circleSize).then(stateSemantics),
         shape = CircleShape,
         color = background,
         contentColor = Color.White.copy(alpha = if (enabled || isLock) 1f else 0.5f)

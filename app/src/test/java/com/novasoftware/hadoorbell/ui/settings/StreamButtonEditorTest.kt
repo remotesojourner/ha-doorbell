@@ -40,7 +40,7 @@ class StreamButtonEditorTest {
     val composeTestRule = createComposeRule()
 
     @Test
-    fun `the saved lock action is visible and selected when its dropdown opens`() {
+    fun `a saved lock action can be selected again from the action dropdown`() {
         val lock = StreamButton(
             "front-lock",
             StreamButtonAction.DoorLock("lock.front"),
@@ -48,19 +48,21 @@ class StreamButtonEditorTest {
             entityName = "Front door"
         )
         val otherEntities = listOf(
-            HomeAssistantEntity("lock.front", "Front door"),
+            HomeAssistantEntity("lock.front", "Front door", icon = "mdi:lock"),
             HomeAssistantEntity("switch.front", "Front relay")
         )
+        var layout by mutableStateOf(StreamButtonLayout(top = listOf(lock)))
         composeTestRule.setContent {
             MaterialTheme {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     StreamButtonEditor(
-                        layout = StreamButtonLayout(top = listOf(lock)),
+                        layout = layout,
                         entities = otherEntities,
                         isLoadingEntities = false,
                         entityLoadError = null,
                         onLoadEntities = {},
-                        onLayoutChange = {}
+                        onLayoutChange = { layout = it },
+                        services = listOf(HomeAssistantService("lock", "unlock", "Unlock"))
                     )
                 }
             }
@@ -68,13 +70,24 @@ class StreamButtonEditorTest {
 
         composeTestRule.onNodeWithText("Front door").performScrollTo().performClick()
         composeTestRule.onNodeWithText("Home Assistant entity").assertExists()
-        composeTestRule.onNode(hasText("Call a service") and hasAnyAncestor(isDialog())).performClick()
-        composeTestRule.onNode(hasText("Call a service") and isSelected()).assertIsDisplayed().performClick()
         composeTestRule.onNode(hasText("Lock or unlock") and hasAnyAncestor(isDialog())).performClick()
-        composeTestRule.onNode(hasText("Lock or unlock") and isSelected()).assertIsDisplayed().performClick()
+        composeTestRule.onNode(hasText("Lock or unlock") and isSelected()).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Call a service").performClick()
+        composeTestRule.onNodeWithText("Choose a service").performClick()
+        composeTestRule.onNode(hasText("Lock or unlock") and hasAnyAncestor(isDialog())).assertDoesNotExist()
+        composeTestRule.onNodeWithText("Unlock").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Cancel").performClick()
+        composeTestRule.onNode(hasText("Call a service") and hasAnyAncestor(isDialog())).performClick()
+        composeTestRule.onNode(hasText("Lock or unlock") and !hasAnyAncestor(isDialog())).performClick()
+        composeTestRule.onNodeWithText("Choose a service").assertDoesNotExist()
         composeTestRule.onNode(hasText("Front door") and hasAnyAncestor(isDialog())).performClick()
         composeTestRule.onNodeWithText("lock.front").assertExists()
         composeTestRule.onNodeWithText("Front relay").assertDoesNotExist()
+        composeTestRule.onNode(hasText("Front door") and hasAnyAncestor(isDialog())).performClick()
+        composeTestRule.onNodeWithText("Done").performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(lock.copy(entityIcon = "mdi:lock"), layout.top.single())
+        }
     }
 
     @Test
@@ -143,6 +156,55 @@ class StreamButtonEditorTest {
         composeTestRule.runOnIdle {
             assertEquals(null, layout.top.single().icon)
             assertEquals("mdi:message-text", layout.top.single().entityIcon)
+        }
+    }
+
+    @Test
+    fun `state entity controls the automatic icon independently of the action target`() {
+        val script = StreamButton(
+            "porch-script",
+            StreamButtonAction.RunScript("script.toggle_porch"),
+            entityIcon = "mdi:script-text",
+            entityName = "Toggle porch"
+        )
+        var layout by mutableStateOf(StreamButtonLayout(top = listOf(script)))
+        val entities = listOf(
+            HomeAssistantEntity("script.toggle_porch", "Toggle porch", icon = "mdi:script-text"),
+            HomeAssistantEntity("light.porch", "Porch light", icon = "mdi:lightbulb-off", state = "off")
+        )
+        composeTestRule.setContent {
+            MaterialTheme {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    StreamButtonEditor(
+                        layout = layout,
+                        entities = entities,
+                        isLoadingEntities = false,
+                        entityLoadError = null,
+                        onLoadEntities = {},
+                        onLayoutChange = { layout = it }
+                    )
+                }
+            }
+        }
+
+        composeTestRule.onNodeWithText("Toggle porch").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Follow action target").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Choose a state entity").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Porch light").performClick()
+        composeTestRule.onNodeWithText("Current state: off").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Done").performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(
+                script.copy(stateEntityId = "light.porch", entityIcon = "mdi:lightbulb-off"),
+                layout.top.single()
+            )
+        }
+
+        composeTestRule.onNodeWithText("Toggle porch").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Use action target").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Done").performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(script, layout.top.single())
         }
     }
 

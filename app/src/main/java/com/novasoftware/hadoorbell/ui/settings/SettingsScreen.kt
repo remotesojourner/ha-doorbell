@@ -21,10 +21,10 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,7 +41,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.text.KeyboardOptions
@@ -67,12 +69,18 @@ fun SettingsScreen(
 
     if (!uiState.isLoaded) return
 
+    val connectionStatus = uiState.connectionStatus
+    val isCheckingConnection = connectionStatus == HomeAssistantConnectionStatus.Checking
+    val canEditStreamSettings = connectionStatus == HomeAssistantConnectionStatus.Verified
+    val canSaveConnection = uiState.url.isNotBlank() && uiState.token.isNotBlank() &&
+        !canEditStreamSettings && !isCheckingConnection
+
     val context = LocalContext.current
     val hasCamera = remember(context) {
         context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
     }
     var invalidTokenQr by rememberSaveable { mutableStateOf(false) }
-    var showCallSettings by rememberSaveable { mutableStateOf(false) }
+    var showCallSettings by rememberSaveable(canEditStreamSettings) { mutableStateOf(false) }
     val tokenScanPrompt = stringResource(R.string.settings_token_scan_prompt)
     val scanToken = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { invalidTokenQr = !viewModel.importTokenFromQr(it) }
@@ -122,15 +130,14 @@ fun SettingsScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { saveSettings() },
-                icon = { },
-                text = { Text(stringResource(R.string.settings_save), fontWeight = FontWeight.Bold) },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
+            Button(
+                onClick = saveSettings,
+                enabled = canEditStreamSettings,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp),
                 shape = RoundedCornerShape(16.dp)
-            )
+            ) {
+                Text(stringResource(R.string.settings_save), fontWeight = FontWeight.Bold)
+            }
         },
         floatingActionButtonPosition = FabPosition.Center,
     ) { innerPadding ->
@@ -162,10 +169,11 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold
                     )
-                    
+
                     OutlinedTextField(
                         value = uiState.url,
                         onValueChange = { viewModel.updateUrl(it) },
+                        enabled = !isCheckingConnection,
                         label = { Text(stringResource(R.string.settings_ha_url)) },
                         leadingIcon = { Icon(Icons.Default.Dns, contentDescription = "Server URL") },
                         placeholder = { Text("https://192.168.1.10:8123") },
@@ -180,18 +188,22 @@ fun SettingsScreen(
                             invalidTokenQr = false
                             viewModel.updateToken(it)
                         },
+                        enabled = !isCheckingConnection,
                         label = { Text(stringResource(R.string.settings_ha_token)) },
                         leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
                         trailingIcon = if (hasCamera) {
                             {
-                                IconButton(onClick = {
-                                    scanToken.launch(
-                                        ScanOptions()
-                                            .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                                            .setPrompt(tokenScanPrompt)
-                                            .setBeepEnabled(false)
-                                    )
-                                }) {
+                                IconButton(
+                                    enabled = !isCheckingConnection,
+                                    onClick = {
+                                        scanToken.launch(
+                                            ScanOptions()
+                                                .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                                                .setPrompt(tokenScanPrompt)
+                                                .setBeepEnabled(false)
+                                        )
+                                    }
+                                ) {
                                     Icon(
                                         Icons.Default.QrCodeScanner,
                                         contentDescription = stringResource(R.string.settings_scan_token)
@@ -209,8 +221,32 @@ fun SettingsScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         visualTransformation = PasswordVisualTransformation()
                     )
-
-
+                    val connectionMessage = when (connectionStatus) {
+                        HomeAssistantConnectionStatus.Unchecked -> stringResource(R.string.settings_connection_required)
+                        HomeAssistantConnectionStatus.Checking -> stringResource(R.string.settings_connection_checking)
+                        HomeAssistantConnectionStatus.Verified -> stringResource(R.string.settings_connection_verified)
+                        is HomeAssistantConnectionStatus.Failed -> homeAssistantErrorMessage(
+                            connectionStatus.error,
+                            R.string.settings_connection_request_error
+                        ).orEmpty()
+                    }
+                    Text(
+                        text = connectionMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (connectionStatus is HomeAssistantConnectionStatus.Failed) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                    )
+                    Button(
+                        onClick = viewModel::saveConnection,
+                        enabled = canSaveConnection,
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text(stringResource(R.string.settings_connection_save))
+                    }
                 }
             }
 
@@ -247,6 +283,7 @@ fun SettingsScreen(
                             androidx.compose.material3.FilterChip(
                                 selected = uiState.webrtcProvider == value,
                                 onClick = { viewModel.updateWebrtcProvider(value) },
+                                enabled = canEditStreamSettings,
                                 label = { Text(label) },
                                 modifier = Modifier.testTag("provider_chip_$value")
                             )
@@ -262,6 +299,7 @@ fun SettingsScreen(
                     OutlinedTextField(
                         value = uiState.streamSource,
                         onValueChange = { viewModel.updateStreamSource(it) },
+                        enabled = canEditStreamSettings,
                         label = { Text(stringResource(R.string.settings_stream_source)) },
                         leadingIcon = { Icon(Icons.Default.Videocam, contentDescription = "Stream") },
                         placeholder = { Text("front_door_camera") },
@@ -304,7 +342,8 @@ fun SettingsScreen(
                         services = uiState.services,
                         isLoadingServices = uiState.isLoadingServices,
                         serviceLoadError = serviceLoadError,
-                        onLoadServices = viewModel::loadServices
+                        onLoadServices = viewModel::loadServices,
+                        enabled = canEditStreamSettings
                     )
                 }
             }
@@ -314,7 +353,7 @@ fun SettingsScreen(
         }
     }
 
-    if (showCallSettings) {
+    if (canEditStreamSettings && showCallSettings) {
         CallSettingsDialog(
             state = uiState,
             entityLoadError = entityLoadError,
@@ -332,6 +371,7 @@ private fun homeAssistantErrorMessage(error: HomeAssistantLoadError?, requestFai
         HomeAssistantLoadError.InvalidConnection -> stringResource(R.string.settings_entities_invalid_connection)
         HomeAssistantLoadError.AuthenticationFailed -> stringResource(R.string.settings_entities_auth_error)
         HomeAssistantLoadError.RequestFailed -> stringResource(requestFailed)
+        HomeAssistantLoadError.ConnectionSaveFailed -> stringResource(R.string.settings_connection_save_error)
         null -> null
     }
 

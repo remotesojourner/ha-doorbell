@@ -44,4 +44,22 @@ class StreamButtonIconTest {
         compose.runOnIdle { button.value = button.value.copy(icon = "mdi:star") }
         compose.onNodeWithContentDescription("star").assertIsDisplayed()
     }
+
+    @Test
+    fun `script button can show the state of a separate lock`() {
+        val button = StreamButton(
+            id = "front-door",
+            action = StreamButtonAction.RunScript("script.toggle_front_door"),
+            stateEntityId = "lock.front_door"
+        )
+        val appearance = mutableStateOf(HomeAssistantEntityAppearance("locked"))
+        compose.setContent {
+            val icon = requireNotNull(resolveStreamButtonIcon(button, appearance.value))
+            StreamButtonIcon(icon, contentDescription = icon)
+        }
+
+        compose.onNodeWithContentDescription("lock").assertIsDisplayed()
+        compose.runOnIdle { appearance.value = HomeAssistantEntityAppearance("unlocked") }
+        compose.onNodeWithContentDescription("lock-open-variant").assertIsDisplayed()
+    }
 }

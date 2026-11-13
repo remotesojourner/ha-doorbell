@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantConnection
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.model.normalizeHomeAssistantUrl
 import com.novasoftware.hadoorbell.domain.repository.SettingsRepository
@@ -31,8 +32,9 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
         val HANGUP_ACTION_ENTITY_ID = stringPreferencesKey("hangup_action_entity_id")
     }
 
-    override val haUrlFlow: Flow<String?> = context.dataStore.data.map { it[HA_URL]?.trim() }
-    override val haTokenFlow: Flow<String?> = context.dataStore.data.map { it[HA_TOKEN]?.trim() }
+    override val homeAssistantConnectionFlow: Flow<HomeAssistantConnection> = context.dataStore.data.map {
+        HomeAssistantConnection(url = it[HA_URL].orEmpty().trim(), token = it[HA_TOKEN].orEmpty().trim())
+    }
     override val streamSourceFlow: Flow<String?> = context.dataStore.data.map { it[STREAM_SOURCE]?.trim() }
     override val instantTwoWayAudioFlow: Flow<Boolean> = context.dataStore.data.map { it[INSTANT_TWO_WAY_AUDIO] ?: false }
     override val webrtcProviderFlow: Flow<String> = context.dataStore.data.map { it[WEBRTC_PROVIDER] ?: "frigate" }
@@ -44,9 +46,14 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
         it[STREAM_BUTTON_LAYOUT]?.let(StreamButtonLayoutJson::decode) ?: StreamButtonLayout()
     }
 
+    override suspend fun saveHomeAssistantConnection(url: String, token: String) {
+        context.dataStore.edit {
+            it[HA_URL] = normalizeHomeAssistantUrl(url)
+            it[HA_TOKEN] = token.trim()
+        }
+    }
+
     override suspend fun saveSettings(
-        url: String,
-        token: String,
         source: String,
         instantTwoWayAudio: Boolean,
         provider: String,
@@ -57,8 +64,6 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
         streamButtonLayout: StreamButtonLayout
     ) {
         context.dataStore.edit { preferences ->
-            preferences[HA_URL] = normalizeHomeAssistantUrl(url)
-            preferences[HA_TOKEN] = token.trim()
             preferences[STREAM_SOURCE] = source.trim()
             preferences[INSTANT_TWO_WAY_AUDIO] = instantTwoWayAudio
             preferences[WEBRTC_PROVIDER] = provider

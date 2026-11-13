@@ -82,7 +82,7 @@ internal fun resolveStreamButtonIcon(
     entityAppearance: HomeAssistantEntityAppearance?
 ): String? = resolveStreamButtonIcon(
     action = button.action,
-    entityId = button.action.entityId,
+    entityId = button.iconEntityId,
     selectedIcon = button.icon,
     cachedEntityIcon = button.entityIcon,
     entityAppearance = entityAppearance
@@ -103,18 +103,33 @@ internal fun resolveStreamButtonIcon(
         ?: entityIcon?.iconName()?.takeIf(icons::containsKey)
     if (resolved != null) return resolved
 
-    return when {
-        action is StreamButtonAction.DoorLock || action is StreamButtonAction.QuickReply -> null
-        action is StreamButtonAction.CallService && action.doorRelease -> null
-        else -> defaultHomeAssistantIcon(entityId, entityAppearance)?.takeIf(icons::containsKey)
+    val hasActionIcon = when (action) {
+        is StreamButtonAction.DoorLock, is StreamButtonAction.QuickReply -> true
+        is StreamButtonAction.CallService -> action.doorRelease
+        else -> false
     }
+    if (hasActionIcon && entityId == action?.entityId) return null
+
+    return defaultHomeAssistantIcon(entityId, entityAppearance)?.takeIf(icons::containsKey)
 }
 
 private fun defaultHomeAssistantIcon(
     entityId: String,
     appearance: HomeAssistantEntityAppearance?
 ): String? = when (entityId.substringBefore('.')) {
+    "alarm_control_panel" -> when (appearance?.state) {
+        "armed_away" -> "shield-lock"
+        "armed_custom_bypass" -> "security"
+        "armed_home" -> "shield-home"
+        "armed_night" -> "shield-moon"
+        "armed_vacation" -> "shield-airplane"
+        "disarmed" -> "shield-off"
+        "pending" -> "shield-outline"
+        "triggered" -> "bell-ring"
+        else -> "shield"
+    }
     "automation" -> "robot"
+    "binary_sensor" -> binarySensorIcon(appearance)
     "button", "input_button" -> "gesture-tap-button"
     "climate" -> "thermostat"
     "cover" -> coverIcon(appearance)
@@ -141,6 +156,20 @@ private fun defaultHomeAssistantIcon(
     }
     "valve" -> "valve"
     else -> null
+}
+
+private fun binarySensorIcon(appearance: HomeAssistantEntityAppearance?): String {
+    val (off, on) = when (appearance?.deviceClass) {
+        "door" -> "door-closed" to "door-open"
+        "garage_door" -> "garage" to "garage-open"
+        "lock" -> "lock" to "lock-open"
+        "motion" -> "motion-sensor-off" to "motion-sensor"
+        "occupancy", "presence" -> "home-outline" to "home"
+        "opening" -> "square" to "square-outline"
+        "window" -> "window-closed" to "window-open"
+        else -> "radiobox-blank" to "checkbox-marked-circle"
+    }
+    return if (appearance?.state == "on") on else off
 }
 
 private fun coverIcon(appearance: HomeAssistantEntityAppearance?): String {

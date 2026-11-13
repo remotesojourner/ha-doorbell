@@ -9,8 +9,11 @@ data class StreamButton(
     val visible: Boolean = true,
     val icon: String? = null,
     val entityIcon: String? = null,
-    val entityName: String? = null
+    val entityName: String? = null,
+    val stateEntityId: String? = null
 ) {
+    val iconEntityId: String get() = stateEntityId?.trim()?.takeIf(String::isNotEmpty) ?: action.entityId
+
     val displayName: String get() = entityName?.takeIf { it.isNotBlank() } ?: when (val currentAction = action) {
         is StreamButtonAction.CallService -> currentAction.entityId.ifBlank {
             "${currentAction.domain}.${currentAction.service}"

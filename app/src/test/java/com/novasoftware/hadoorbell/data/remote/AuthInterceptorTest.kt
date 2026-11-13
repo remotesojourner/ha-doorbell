@@ -1,6 +1,7 @@
 package com.novasoftware.hadoorbell.data.remote
 
 import com.novasoftware.hadoorbell.data.repository.SettingsRepositoryImpl
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantConnection
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
@@ -48,8 +49,8 @@ class AuthInterceptorTest {
         val expectedToken = "test_token"
         val mockBaseUrl = mockWebServer.url("/").toString()
         
-        every { appPreferences.haTokenFlow } returns flowOf(expectedToken)
-        every { appPreferences.haUrlFlow } returns flowOf(mockBaseUrl)
+        every { appPreferences.homeAssistantConnectionFlow } returns
+            flowOf(HomeAssistantConnection(mockBaseUrl, expectedToken))
 
         mockWebServer.enqueue(MockResponse().setResponseCode(200))
 
@@ -80,7 +81,7 @@ class AuthInterceptorTest {
             .create(HomeAssistantApi::class.java)
 
         val entities = api.getEntities(
-            mockWebServer.url("/api/states"), "Bearer draft_token", DraftHomeAssistantConnection
+            mockWebServer.url("/api/states"), "Bearer draft_token", ExplicitHomeAssistantConnection
         )
 
         val recordedRequest = checkNotNull(mockWebServer.takeRequest(5, TimeUnit.SECONDS))

@@ -11,6 +11,7 @@ import com.novasoftware.hadoorbell.domain.model.normalizeHomeAssistantUrl
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantEntitiesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantServicesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSettingsUseCase
+import com.novasoftware.hadoorbell.domain.usecase.SaveHomeAssistantConnectionUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SaveSettingsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -23,6 +24,7 @@ import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import retrofit2.HttpException
+import java.io.IOException
 import java.util.Base64
 import javax.inject.Inject
 
@@ -31,7 +33,8 @@ class SettingsViewModel @Inject constructor(
     private val getSettingsUseCase: GetSettingsUseCase,
     private val saveSettingsUseCase: SaveSettingsUseCase,
     private val getHomeAssistantEntities: GetHomeAssistantEntitiesUseCase,
-    private val getHomeAssistantServices: GetHomeAssistantServicesUseCase
+    private val getHomeAssistantServices: GetHomeAssistantServicesUseCase,
+    private val saveHomeAssistantConnection: SaveHomeAssistantConnectionUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -64,8 +67,8 @@ class SettingsViewModel @Inject constructor(
                     isLoaded = true
                 )
             }
-            if (settings.streamButtonLayout.buttons.any { it.icon.isNullOrBlank() && it.action.entityId.isNotBlank() }) {
-                loadEntities()
+            if (settings.url.isNotBlank() && settings.token.isNotBlank()) {
+                verifyConnection(save = false)
             }
         }
     }
@@ -95,29 +98,74 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun updateConnection(update: (SettingsUiState) -> SettingsUiState) {
+        val state = _uiState.value
+        if (state.connectionStatus == HomeAssistantConnectionStatus.Checking) return
+        val draft = update(state)
+        if (draft == state) return
         entityLoadJob?.cancel()
         serviceLoadJob?.cancel()
-        _uiState.update {
-            update(it).copy(
-                entities = emptyList(),
-                isLoadingEntities = false,
-                entityLoadError = null,
-                services = emptyList(),
-                isLoadingServices = false,
-                serviceLoadError = null
-            )
+        _uiState.value = draft.copy(
+            connectionStatus = HomeAssistantConnectionStatus.Unchecked,
+            entities = emptyList(),
+            isLoadingEntities = false,
+            entityLoadError = null,
+            services = emptyList(),
+            isLoadingServices = false,
+            serviceLoadError = null
+        )
+    }
+
+    fun saveConnection() = verifyConnection(save = true)
+
+    private fun verifyConnection(save: Boolean) {
+        val state = _uiState.value
+        if (!state.isLoaded || state.connectionStatus == HomeAssistantConnectionStatus.Checking ||
+            state.connectionStatus == HomeAssistantConnectionStatus.Verified
+        ) return
+
+        val error = connectionError(state)
+        if (error != null) {
+            _uiState.update { it.copy(connectionStatus = HomeAssistantConnectionStatus.Failed(error)) }
+            return
+        }
+
+        val url = normalizeHomeAssistantUrl(state.url)
+        val token = state.token.trim()
+        _uiState.update { it.copy(connectionStatus = HomeAssistantConnectionStatus.Checking) }
+        viewModelScope.launch {
+            val entities = getHomeAssistantEntities(url, token).getOrElse { failure ->
+                _uiState.update {
+                    it.copy(connectionStatus = HomeAssistantConnectionStatus.Failed(loadError(failure)))
+                }
+                return@launch
+            }
+            if (save) {
+                try {
+                    saveHomeAssistantConnection(url, token)
+                } catch (_: IOException) {
+                    _uiState.update {
+                        it.copy(
+                            connectionStatus = HomeAssistantConnectionStatus.Failed(HomeAssistantLoadError.ConnectionSaveFailed)
+                        )
+                    }
+                    return@launch
+                }
+                savedSettings = savedSettings.copy(url = url, token = token)
+            }
+            _uiState.update {
+                it.copy(
+                    url = url,
+                    token = token,
+                    connectionStatus = HomeAssistantConnectionStatus.Verified,
+                    entities = entities
+                )
+            }
         }
     }
 
     fun loadEntities() {
         val state = _uiState.value
-        if (state.isLoadingEntities) return
-
-        val error = connectionError(state)
-        if (error != null) {
-            _uiState.update { it.copy(entityLoadError = error) }
-            return
-        }
+        if (state.connectionStatus != HomeAssistantConnectionStatus.Verified || state.isLoadingEntities) return
 
         _uiState.update { it.copy(isLoadingEntities = true, entityLoadError = null) }
         entityLoadJob = viewModelScope.launch {
@@ -134,13 +182,7 @@ class SettingsViewModel @Inject constructor(
 
     fun loadServices() {
         val state = _uiState.value
-        if (state.isLoadingServices) return
-
-        val error = connectionError(state)
-        if (error != null) {
-            _uiState.update { it.copy(serviceLoadError = error) }
-            return
-        }
+        if (state.connectionStatus != HomeAssistantConnectionStatus.Verified || state.isLoadingServices) return
 
         _uiState.update { it.copy(isLoadingServices = true, serviceLoadError = null) }
         serviceLoadJob = viewModelScope.launch {
@@ -224,9 +266,8 @@ class SettingsViewModel @Inject constructor(
     fun saveSettings(onComplete: () -> Unit) {
         viewModelScope.launch {
             val currentState = _uiState.value
-            val settings = Settings(
-                url = currentState.url,
-                token = currentState.token,
+            if (currentState.connectionStatus != HomeAssistantConnectionStatus.Verified) return@launch
+            val settings = savedSettings.copy(
                 streamSource = currentState.streamSource,
                 instantTwoWayAudio = currentState.instantTwoWayAudio,
                 webrtcProvider = currentState.webrtcProvider,
@@ -237,7 +278,7 @@ class SettingsViewModel @Inject constructor(
                 streamButtonLayout = currentState.streamButtonLayout
             )
             saveSettingsUseCase(settings)
-            savedSettings = settings
+            savedSettings = settings.copy(url = savedSettings.url, token = savedSettings.token)
             onComplete()
         }
     }

@@ -1,5 +1,7 @@
 package com.novasoftware.hadoorbell.domain.model
 
+data class HomeAssistantConnection(val url: String, val token: String)
+
 data class Settings(
     val url: String = "",
     val token: String = "",

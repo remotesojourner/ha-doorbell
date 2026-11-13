@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -12,6 +15,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
@@ -79,13 +83,40 @@ class StreamBottomControlsTest {
         assertEquals(buttons.last(), pressed)
     }
 
-    private fun showControls(width: Dp, buttons: List<StreamButton>, onButtonClick: (StreamButton) -> Unit = {}) {
+    @Test
+    fun `a stream button exposes the selected entity state without adding a label`() {
+        val button = StreamButton(
+            "script",
+            StreamButtonAction.RunScript("script.porch"),
+            stateEntityId = "light.porch"
+        )
+        showControls(
+            400.dp,
+            listOf(button),
+            entityAppearances = mapOf(
+                "script.porch" to HomeAssistantEntityAppearance("on"),
+                "light.porch" to HomeAssistantEntityAppearance("off")
+            )
+        )
+
+        composeTestRule.onNodeWithContentDescription(button.displayName)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "off"))
+        composeTestRule.onNodeWithText("off", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    private fun showControls(
+        width: Dp,
+        buttons: List<StreamButton>,
+        entityAppearances: Map<String, HomeAssistantEntityAppearance> = emptyMap(),
+        onButtonClick: (StreamButton) -> Unit = {}
+    ) {
         composeTestRule.setContent {
             MaterialTheme {
                 Box(Modifier.width(width)) {
                     StreamBottomControls(
                         uiState = StreamUiState(
                             streamButtonLayout = StreamButtonLayout(bottom = buttons),
+                            entityAppearances = entityAppearances,
                             isStreamButtonLayoutReady = true
                         ),
                         pulseScale = 1f,

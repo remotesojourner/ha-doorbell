@@ -23,9 +23,15 @@ class HomeAssistantWebRtcClient(
     private var pendingOfferContinuation: kotlin.coroutines.Continuation<String>? = null
     private val iceCandidatesFlow = kotlinx.coroutines.flow.MutableSharedFlow<String>(replay = 100)
 
+    private fun signalingRequest(url: String): Request = Request.Builder()
+        .url(url)
+        .tag(ExplicitHomeAssistantConnection::class.java, ExplicitHomeAssistantConnection)
+        .apply { if (token.isNotBlank()) header("Authorization", "Bearer $token") }
+        .build()
+
     private suspend fun getSignedUrl(): String = suspendCancellableCoroutine { continuation ->
         val wsUrl = haUrl.trimEnd('/') + "/api/websocket"
-        val request = Request.Builder().url(wsUrl).build()
+        val request = signalingRequest(wsUrl)
         var socket: WebSocket? = null
         
         socket = client.newWebSocket(request, object : WebSocketListener() {
@@ -85,9 +91,7 @@ class HomeAssistantWebRtcClient(
             try {
                 val signedUrl = getSignedUrl()
                 
-                val request = Request.Builder()
-                    .url(signedUrl)
-                    .build()
+                val request = signalingRequest(signedUrl)
 
                 webSocket = client.newWebSocket(request, object : WebSocketListener() {
                     override fun onOpen(webSocket: WebSocket, response: Response) {

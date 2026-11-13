@@ -88,11 +88,13 @@ class MainActivity : FragmentActivity() {
                                     viewModel = settingsViewModel
                                 )
                             }
-                            composable(Navigation.ROUTE_STREAM) {
+                            composable(Navigation.ROUTE_STREAM) { streamEntry ->
                                 val streamViewModel: com.novasoftware.hadoorbell.ui.stream.StreamViewModel = androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel()
                                 StreamScreen(
                                     onNavigateToSettings = {
-                                        navController.navigate(Navigation.ROUTE_SETTINGS)
+                                        if (navController.currentBackStackEntry == streamEntry && !isFinishing && !isDestroyed) {
+                                            navController.navigate(Navigation.ROUTE_SETTINGS)
+                                        }
                                     },
                                     onExit = {
                                         finish() // Exit the app

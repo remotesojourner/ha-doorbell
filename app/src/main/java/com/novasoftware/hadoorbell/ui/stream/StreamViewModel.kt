@@ -42,7 +42,9 @@ import javax.inject.Inject
 
 sealed class UiEvent {
     data class ShowToast(val message: String, val long: Boolean = false) : UiEvent()
-    data class AuthenticateStreamButton(val button: StreamButton) : UiEvent()
+    sealed class Authentication : UiEvent()
+    data class AuthenticateStreamButton(val button: StreamButton) : Authentication()
+    class AuthenticateSettings : Authentication()
 }
 
 @HiltViewModel
@@ -73,7 +75,7 @@ class StreamViewModel @Inject constructor(
     private var appearanceRefreshJob: Job? = null
     private var answerJob: Job? = null
     private var quickReplyLoadJob: Job? = null
-    private var pendingButtonAuthentication: UiEvent.AuthenticateStreamButton? = null
+    private var pendingAuthentication: UiEvent.Authentication? = null
 
     fun initializeConnection(context: Context) {
         initializeJob?.cancel()
@@ -98,8 +100,8 @@ class StreamViewModel @Inject constructor(
                     isStreamButtonLayoutReady = true
                 )
             }
-            pendingButtonAuthentication?.let { request ->
-                if (!isConfiguredButton(request.button)) cancelStreamButtonAuthentication()
+            (pendingAuthentication as? UiEvent.AuthenticateStreamButton)?.let { request ->
+                if (!isConfiguredButton(request.button)) cancelAuthentication()
             }
 
             val instantTwoWay = appPreferences.instantTwoWayAudioFlow.first()
@@ -124,8 +126,8 @@ class StreamViewModel @Inject constructor(
         val buttons = currentState.streamButtonLayout.buttons.filter(StreamButton::visible)
         val lockIds = buttons.mapNotNull { (it.action as? StreamButtonAction.DoorLock)?.entityId }.toSet()
         val entityIds = (buttons
-            .filter { it.icon.isNullOrBlank() }
-            .map { it.action.entityId }
+            .filter { it.icon.isNullOrBlank() || !it.stateEntityId.isNullOrBlank() }
+            .map(StreamButton::iconEntityId)
             .toSet() + lockIds).filter(String::isNotBlank)
 
         appearanceRefreshJob?.cancel()
@@ -360,33 +362,43 @@ class StreamViewModel @Inject constructor(
                     _uiEvent.emit(UiEvent.ShowToast(message))
                 }
                 LockState.Unlocked, LockState.Unlocking -> executeLockAction(button, action.entityId, unlock = false)
-                else -> requestStreamButtonAuthentication(button)
+                else -> requestAuthentication(UiEvent.AuthenticateStreamButton(button))
             }
             else -> if (button.requiresAuthentication || action is StreamButtonAction.CallService && action.doorRelease) {
-                requestStreamButtonAuthentication(button)
+                requestAuthentication(UiEvent.AuthenticateStreamButton(button))
             } else {
                 executeStreamButton(button)
             }
         }
     }
 
-    private fun requestStreamButtonAuthentication(button: StreamButton) {
-        if (pendingButtonAuthentication != null) return
-        val request = UiEvent.AuthenticateStreamButton(button)
-        pendingButtonAuthentication = request
-        viewModelScope.launch { _uiEvent.emit(request) }
+    fun requestSettingsAuthentication() = requestAuthentication(UiEvent.AuthenticateSettings())
+
+    private fun requestAuthentication(request: UiEvent.Authentication) {
+        if (pendingAuthentication != null) return
+        pendingAuthentication = request
+        viewModelScope.launch {
+            if (pendingAuthentication === request) _uiEvent.emit(request)
+        }
     }
 
     fun onStreamButtonAuthentication(request: UiEvent.AuthenticateStreamButton, succeeded: Boolean) {
-        if (pendingButtonAuthentication !== request) return
-        cancelStreamButtonAuthentication()
-        if (succeeded && isConfiguredButton(request.button)) {
+        if (consumeAuthentication(request) && succeeded && isConfiguredButton(request.button)) {
             executeStreamButton(request.button)
         }
     }
 
-    fun cancelStreamButtonAuthentication() {
-        pendingButtonAuthentication = null
+    fun onSettingsAuthentication(request: UiEvent.AuthenticateSettings, succeeded: Boolean): Boolean =
+        consumeAuthentication(request) && succeeded
+
+    private fun consumeAuthentication(request: UiEvent.Authentication): Boolean {
+        if (pendingAuthentication !== request) return false
+        cancelAuthentication()
+        return true
+    }
+
+    fun cancelAuthentication() {
+        pendingAuthentication = null
     }
 
     private fun isConfiguredButton(button: StreamButton): Boolean {

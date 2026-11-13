@@ -1,5 +1,6 @@
 package com.novasoftware.hadoorbell.domain.usecase
 
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantConnection
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.repository.SettingsRepository
 import io.mockk.every
@@ -20,8 +21,8 @@ class GetSettingsUseCaseTest {
     @Before
     fun setup() {
         repository = mockk {
-            every { haUrlFlow } returns flowOf("https://home.local")
-            every { haTokenFlow } returns flowOf("token_abc")
+            every { homeAssistantConnectionFlow } returns
+                flowOf(HomeAssistantConnection("https://home.local", "token_abc"))
             every { streamSourceFlow } returns flowOf("front_cam")
             every { instantTwoWayAudioFlow } returns flowOf(false)
             every { webrtcProviderFlow } returns flowOf("webrtc")

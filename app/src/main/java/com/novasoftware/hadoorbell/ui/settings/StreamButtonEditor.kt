@@ -91,10 +91,11 @@ internal fun StreamButtonEditor(
     services: List<HomeAssistantService> = emptyList(),
     isLoadingServices: Boolean = false,
     serviceLoadError: String? = null,
-    onLoadServices: () -> Unit = {}
+    onLoadServices: () -> Unit = {},
+    enabled: Boolean = true
 ) {
-    var editingRow by rememberSaveable { mutableStateOf<ButtonRow?>(null) }
-    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingRow by rememberSaveable(enabled) { mutableStateOf<ButtonRow?>(null) }
+    var editingId by rememberSaveable(enabled) { mutableStateOf<String?>(null) }
 
     ButtonRow.entries.forEach { row ->
         val buttons = row.buttons(layout)
@@ -113,18 +114,26 @@ internal fun StreamButtonEditor(
                 FixedButton(
                     label = stringResource(R.string.stream_button_call),
                     icon = Icons.Default.Call,
-                    onEdit = onEditCall
+                    onEdit = onEditCall,
+                    enabled = enabled
                 )
             }
             buttons.forEachIndexed { index, button ->
                 key(button.id) {
                     StreamButtonListItem(
                         button = button,
-                        entity = entities.find { it.entityId == button.action.entityId },
+                        iconEntity = entities.find { it.entityId == button.iconEntityId },
+                        lockState = if (button.action is StreamButtonAction.DoorLock) {
+                            entities.find { it.entityId == button.action.entityId }?.state
+                                ?.let(LockState::fromString) ?: LockState.Locked
+                        } else {
+                            LockState.Unknown
+                        },
+                        enabled = enabled,
                         onEdit = {
                             editingRow = row
                             editingId = button.id
-                            if (entities.isEmpty() && button.action.entityId.isNotBlank() && button.icon.isNullOrBlank()) {
+                            if (entities.isEmpty() && button.iconEntityId.isNotBlank() && button.icon.isNullOrBlank()) {
                                 onLoadEntities()
                             }
                         },
@@ -153,6 +162,7 @@ internal fun StreamButtonEditor(
             }
             if (buttons.size < StreamButtonLayout.MAX_BUTTONS_PER_ROW) {
                 TextButton(
+                    enabled = enabled,
                     onClick = {
                         editingRow = row
                         editingId = null
@@ -165,7 +175,7 @@ internal fun StreamButtonEditor(
         }
     }
 
-    editingRow?.let { row ->
+    editingRow?.takeIf { enabled }?.let { row ->
         val existing = row.buttons(layout).find { it.id == editingId }
         val dismiss = {
             editingRow = null
@@ -195,7 +205,12 @@ internal fun StreamButtonEditor(
 }
 
 @Composable
-private fun FixedButton(label: String, icon: ImageVector, onEdit: (() -> Unit)? = null) {
+private fun FixedButton(
+    label: String,
+    icon: ImageVector,
+    onEdit: (() -> Unit)? = null,
+    enabled: Boolean = true
+) {
     val editLabel = stringResource(R.string.stream_button_edit_call)
     ListItem(
         headlineContent = { Text(label) },
@@ -204,7 +219,7 @@ private fun FixedButton(label: String, icon: ImageVector, onEdit: (() -> Unit)? 
             { Icon(Icons.Default.Edit, contentDescription = null) }
         } else null,
         modifier = if (onEdit != null) {
-            Modifier.clickable(onClickLabel = editLabel, onClick = onEdit)
+            Modifier.clickable(enabled = enabled, onClickLabel = editLabel, onClick = onEdit)
         } else Modifier,
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
@@ -213,7 +228,9 @@ private fun FixedButton(label: String, icon: ImageVector, onEdit: (() -> Unit)? 
 @Composable
 private fun StreamButtonListItem(
     button: StreamButton,
-    entity: HomeAssistantEntity?,
+    iconEntity: HomeAssistantEntity?,
+    lockState: LockState,
+    enabled: Boolean,
     onEdit: () -> Unit,
     onMoveUp: (() -> Unit)?,
     onMoveDown: (() -> Unit)?,
@@ -222,7 +239,7 @@ private fun StreamButtonListItem(
     onToggleVisibility: () -> Unit,
     onRemove: () -> Unit
 ) {
-    var menuOpen by remember { mutableStateOf(false) }
+    var menuOpen by remember(enabled) { mutableStateOf(false) }
     val actionKind = ActionKind.from(button.action)
     val actionLabel = stringResource(actionKind.label)
     val details = when (val action = button.action) {
@@ -230,12 +247,11 @@ private fun StreamButtonListItem(
             "${action.domain}.${action.service}".takeUnless { it == button.displayName },
             action.data.get("option")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
         ).joinToString(" · ").ifBlank { null }
-        is StreamButtonAction.DoorLock -> stringResource(R.string.stream_button_door_lock)
         else -> action.entityId.takeUnless { it.isBlank() || it == button.displayName }
     }
     val actionSummary = details?.let { stringResource(R.string.stream_button_action_summary, actionLabel, it) }
         ?: actionLabel
-    val icon = resolveStreamButtonIcon(button, entity?.appearance)
+    val icon = resolveStreamButtonIcon(button, iconEntity?.appearance)
     ListItem(
         headlineContent = {
             Row(
@@ -266,7 +282,6 @@ private fun StreamButtonListItem(
         },
         leadingContent = {
             if (icon == null) {
-                val lockState = entity?.state?.let(LockState::fromString) ?: LockState.Locked
                 Icon(streamButtonFallbackIcon(button.action, lockState), contentDescription = null)
             } else {
                 StreamButtonIcon(icon, contentDescription = null)
@@ -275,13 +290,13 @@ private fun StreamButtonListItem(
         trailingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column {
-                    IconButton(enabled = onMoveUp != null, onClick = { onMoveUp?.invoke() }) {
+                    IconButton(enabled = enabled && onMoveUp != null, onClick = { onMoveUp?.invoke() }) {
                         Icon(
                             Icons.Default.KeyboardArrowUp,
                             contentDescription = stringResource(R.string.stream_button_move_up, button.displayName)
                         )
                     }
-                    IconButton(enabled = onMoveDown != null, onClick = { onMoveDown?.invoke() }) {
+                    IconButton(enabled = enabled && onMoveDown != null, onClick = { onMoveDown?.invoke() }) {
                         Icon(
                             Icons.Default.KeyboardArrowDown,
                             contentDescription = stringResource(R.string.stream_button_move_down, button.displayName)
@@ -289,7 +304,7 @@ private fun StreamButtonListItem(
                     }
                 }
                 Box {
-                    IconButton(onClick = { menuOpen = true }) {
+                    IconButton(enabled = enabled, onClick = { menuOpen = true }) {
                         Icon(
                             Icons.Default.MoreVert,
                             contentDescription = stringResource(R.string.stream_button_menu, button.displayName)
@@ -327,6 +342,7 @@ private fun StreamButtonListItem(
             }
         },
         modifier = Modifier.clickable(
+            enabled = enabled,
             onClickLabel = stringResource(R.string.stream_button_edit),
             onClick = onEdit
         ),
@@ -353,8 +369,8 @@ private fun EditStreamButtonDialog(
     val savedEvent = savedAction as? StreamButtonAction.FireEvent
     var kind by rememberSaveable { mutableStateOf(ActionKind.from(savedAction)) }
     var entityId by rememberSaveable { mutableStateOf(savedAction?.entityId?.ifBlank { null }) }
+    var stateEntityId by rememberSaveable { mutableStateOf(existing?.stateEntityId) }
     var serviceId by rememberSaveable { mutableStateOf(savedService?.let(::serviceId).orEmpty()) }
-    var isLockAction by rememberSaveable { mutableStateOf(savedAction is StreamButtonAction.DoorLock) }
     var eventType by rememberSaveable { mutableStateOf(savedEvent?.eventType.orEmpty()) }
     var skipConditions by rememberSaveable {
         mutableStateOf((savedAction as? StreamButtonAction.TriggerAutomation)?.skipConditions ?: false)
@@ -380,20 +396,23 @@ private fun EditStreamButtonDialog(
         mutableStateOf(existing?.requiresAuthentication ?: false)
     }
     var icon by rememberSaveable { mutableStateOf(existing?.icon) }
-    var cachedEntityIcon by rememberSaveable { mutableStateOf(existing?.entityIcon) }
     var cachedEntityName by rememberSaveable { mutableStateOf(existing?.entityName) }
     var picker by rememberSaveable { mutableStateOf<EditorPicker?>(null) }
     val entity = entities.find { it.entityId == entityId }
-    val currentEntityIcon = if (entity != null) entity.icon else cachedEntityIcon
+    val iconEntityId = stateEntityId?.takeIf(String::isNotBlank) ?: entityId.orEmpty()
+    val iconEntity = entities.find { it.entityId == iconEntityId }
+    val cachedEntityIcon = existing?.entityIcon?.takeIf { existing.iconEntityId == iconEntityId }
+    val currentEntityIcon = if (iconEntity != null) iconEntity.icon else cachedEntityIcon
     val currentEntityName = entity?.name?.takeIf(String::isNotBlank) ?: cachedEntityName
     val service = serviceId.trim()
     val selectedService = services.find { serviceId(it) == service }
     val isService = kind == ActionKind.CALL_SERVICE
-    val isDoorRelease = isService && !isLockAction && savedService?.doorRelease == true
-    val selectOption = isService && !isLockAction && isSelectOptionService(service)
-    val optionalTarget = isService && !isLockAction && !selectOption && !isDoorRelease
-    val targetDomains = if (isService) serviceTargetDomains(service, isLockAction, selectedService) else kind.domains
-    val hasJsonData = isService && !isLockAction || kind == ActionKind.RUN_SCRIPT || kind == ActionKind.FIRE_EVENT
+    val isLockAction = kind == ActionKind.DOOR_LOCK
+    val isDoorRelease = isService && savedService?.doorRelease == true
+    val selectOption = isService && isSelectOptionService(service)
+    val optionalTarget = isService && !selectOption && !isDoorRelease
+    val targetDomains = if (isService) serviceTargetDomains(service, selectedService) else kind.domains
+    val hasJsonData = isService || kind == ActionKind.RUN_SCRIPT || kind == ActionKind.FIRE_EVENT
     val data = remember(jsonText, hasJsonData) {
         if (hasJsonData) parseJsonObject(jsonText) else JsonObject()
     }
@@ -401,7 +420,6 @@ private fun EditStreamButtonDialog(
     val target = entityId.orEmpty()
     val action = when (kind) {
         ActionKind.CALL_SERVICE -> when {
-            isLockAction -> entityId?.let(StreamButtonAction::DoorLock)
             !isServiceId(service) || data == null -> null
             isDoorRelease && entityId == null -> null
             selectOption && (entityId == null || option == null) -> null
@@ -418,22 +436,24 @@ private fun EditStreamButtonDialog(
                     ?: (savedService?.let { serviceId(it) == service && it.needsResponse } == true)
             )
         }
+        ActionKind.DOOR_LOCK -> entityId
+            ?.takeIf { it.substringBefore('.') in StreamButtonAction.LOCK_DOMAINS }
+            ?.let(StreamButtonAction::DoorLock)
         ActionKind.RUN_SCRIPT -> if (entityId != null && data != null) StreamButtonAction.RunScript(target, data) else null
         ActionKind.TRIGGER_AUTOMATION -> entityId?.let { StreamButtonAction.TriggerAutomation(it, skipConditions) }
         ActionKind.FIRE_EVENT -> data?.takeIf { isHomeAssistantEventType(trimmedEvent) }
             ?.let { StreamButtonAction.FireEvent(trimmedEvent, it) }
         ActionKind.QUICK_REPLY -> entityId?.let(StreamButtonAction::QuickReply)
     }
-    val automaticIcon = resolveStreamButtonIcon(action, target, null, cachedEntityIcon, entity?.appearance)
+    val automaticIcon = resolveStreamButtonIcon(action, iconEntityId, null, cachedEntityIcon, iconEntity?.appearance)
     val previewIcon = if (icon == null) automaticIcon else
-        resolveStreamButtonIcon(action, target, icon, cachedEntityIcon, entity?.appearance)
+        resolveStreamButtonIcon(action, iconEntityId, icon, cachedEntityIcon, iconEntity?.appearance)
     val lockState = entity?.state?.let(LockState::fromString) ?: LockState.Locked
     val fallbackIcon = action?.let { streamButtonFallbackIcon(it, lockState) } ?: Icons.Default.Widgets
 
     fun clearEntity() {
         entityId = null
         option = null
-        cachedEntityIcon = null
         cachedEntityName = null
     }
 
@@ -449,8 +469,23 @@ private fun EditStreamButtonDialog(
                 onSelect = { selected ->
                     if (entityId != selected.entityId) option = null
                     entityId = selected.entityId
-                    cachedEntityIcon = selected.icon
                     cachedEntityName = selected.name.takeIf(String::isNotBlank)
+                    picker = null
+                }
+            )
+            return
+        }
+        EditorPicker.STATE_ENTITY -> {
+            HomeAssistantEntityPicker(
+                entities = entities,
+                isLoading = isLoadingEntities,
+                loadError = entityLoadError,
+                onRetry = onLoadEntities,
+                onDismiss = { picker = null },
+                selectedEntityId = stateEntityId,
+                title = R.string.stream_button_choose_state_entity,
+                onSelect = { selected ->
+                    stateEntityId = selected.entityId
                     picker = null
                 }
             )
@@ -477,11 +512,10 @@ private fun EditStreamButtonDialog(
                 onRetry = onLoadServices,
                 onDismiss = { picker = null },
                 serviceId = service,
-                isLockAction = isLockAction,
-                onSelect = { nextService, nextIsLock ->
-                    if (nextService != service || nextIsLock != isLockAction) {
+                onSelect = { nextService ->
+                    if (nextService != service) {
                         val descriptor = services.find { serviceId(it) == nextService }
-                        val nextDomains = serviceTargetDomains(nextService, nextIsLock, descriptor)
+                        val nextDomains = serviceTargetDomains(nextService, descriptor)
                         if (nextDomains.isNotEmpty() && entityId?.substringBefore('.') !in nextDomains) {
                             clearEntity()
                         }
@@ -489,7 +523,6 @@ private fun EditStreamButtonDialog(
                         jsonText = ""
                     }
                     serviceId = nextService
-                    isLockAction = nextIsLock
                     picker = null
                 }
             )
@@ -529,11 +562,18 @@ private fun EditStreamButtonDialog(
                     onSelect = { nextKind ->
                         if (nextKind != kind) {
                             kind = nextKind
-                            clearEntity()
+                            if (nextKind != ActionKind.DOOR_LOCK ||
+                                entityId?.substringBefore('.') !in StreamButtonAction.LOCK_DOMAINS
+                            ) {
+                                clearEntity()
+                                if (nextKind == ActionKind.DOOR_LOCK && savedAction is StreamButtonAction.DoorLock) {
+                                    entityId = savedAction.entityId
+                                    cachedEntityName = existing.entityName
+                                }
+                            }
                             jsonText = ""
                             if (nextKind == ActionKind.CALL_SERVICE) {
                                 serviceId = ""
-                                isLockAction = false
                             }
                         }
                     }
@@ -542,8 +582,7 @@ private fun EditStreamButtonDialog(
                 if (isService) {
                     EditorPickerButton(
                         label = stringResource(R.string.stream_button_service),
-                        value = if (isLockAction) stringResource(R.string.stream_button_door_lock)
-                            else service.ifBlank { stringResource(R.string.stream_button_choose_service) },
+                        value = service.ifBlank { stringResource(R.string.stream_button_choose_service) },
                         onClick = {
                             onLoadServices()
                             picker = EditorPicker.SERVICE
@@ -554,7 +593,7 @@ private fun EditStreamButtonDialog(
                     }
                 }
 
-                if (kind != ActionKind.FIRE_EVENT && (!isService || isLockAction || service.isNotBlank())) {
+                if (kind != ActionKind.FIRE_EVENT && (!isService || service.isNotBlank())) {
                     EditorPickerButton(
                         label = stringResource(
                             if (optionalTarget) R.string.stream_button_optional_target else R.string.stream_button_entity
@@ -636,6 +675,28 @@ private fun EditStreamButtonDialog(
                     }
                 }
 
+                EditorPickerButton(
+                    label = stringResource(R.string.stream_button_state_entity),
+                    value = if (stateEntityId == null) stringResource(R.string.stream_button_follow_action)
+                        else iconEntity?.name ?: stateEntityId.orEmpty(),
+                    onClick = {
+                        onLoadEntities()
+                        picker = EditorPicker.STATE_ENTITY
+                    }
+                )
+                iconEntity?.state?.takeIf(String::isNotBlank)?.let { state ->
+                    Text(
+                        stringResource(R.string.stream_button_current_state, state),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (stateEntityId != null) {
+                    TextButton(onClick = { stateEntityId = null }) {
+                        Text(stringResource(R.string.stream_button_use_action_target))
+                    }
+                }
+
                 Column {
                     Text(
                         stringResource(R.string.stream_button_icon),
@@ -655,7 +716,7 @@ private fun EditStreamButtonDialog(
                     }
                 }
 
-                if (isService && (isLockAction || isDoorRelease)) {
+                if (isLockAction || isDoorRelease) {
                     Text(
                         text = stringResource(
                             if (isLockAction) R.string.stream_button_auth_to_unlock
@@ -686,11 +747,12 @@ private fun EditStreamButtonDialog(
                             StreamButton(
                                 id = existing?.id ?: UUID.randomUUID().toString(),
                                 action = action,
-                                requiresAuthentication = isService && (isLockAction || isDoorRelease) || requiresAuthentication,
+                                requiresAuthentication = isLockAction || isDoorRelease || requiresAuthentication,
                                 visible = existing?.visible ?: true,
                                 icon = icon,
                                 entityIcon = currentEntityIcon,
-                                entityName = currentEntityName
+                                entityName = currentEntityName,
+                                stateEntityId = stateEntityId
                             )
                         )
                     }
@@ -720,8 +782,7 @@ private fun HomeAssistantServicePicker(
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
     serviceId: String,
-    isLockAction: Boolean,
-    onSelect: (String, Boolean) -> Unit
+    onSelect: (String) -> Unit
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     val search = query.trim()
@@ -731,8 +792,6 @@ private fun HomeAssistantServicePicker(
                 it.name.orEmpty().contains(search, ignoreCase = true)
         }
     }
-    val lockLabel = stringResource(R.string.stream_button_door_lock)
-    val showLock = lockLabel.contains(search, ignoreCase = true)
     val currentIsInCatalog = matches.any { serviceId(it) == serviceId }
     val showManual = isServiceId(search) && matches.none { serviceId(it) == search }
 
@@ -755,32 +814,27 @@ private fun HomeAssistantServicePicker(
                     TextButton(onClick = onRetry) { Text(stringResource(R.string.stream_button_retry)) }
                 }
                 LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
-                    if (showLock) {
-                        item {
-                            ServiceChoice(lockLabel, null, isLockAction) { onSelect("", true) }
-                        }
-                    }
                     if (search.isEmpty() && isServiceId(serviceId) && !currentIsInCatalog) {
-                        item { ServiceChoice(serviceId, null, true) { onSelect(serviceId, false) } }
+                        item { ServiceChoice(serviceId, null, true) { onSelect(serviceId) } }
                     }
                     if (showManual) {
                         item {
                             ServiceChoice(
                                 stringResource(R.string.stream_button_use_service, search),
                                 null,
-                                search == serviceId && !isLockAction
-                            ) { onSelect(search, false) }
+                                search == serviceId
+                            ) { onSelect(search) }
                         }
                     }
                     items(matches, key = ::serviceId) { service ->
                         val id = serviceId(service)
                         val name = service.name?.takeIf(String::isNotBlank)
-                        ServiceChoice(name ?: id, id.takeIf { name != null }, id == serviceId && !isLockAction) {
-                            onSelect(id, false)
+                        ServiceChoice(name ?: id, id.takeIf { name != null }, id == serviceId) {
+                            onSelect(id)
                         }
                     }
                 }
-                if (search.isNotBlank() && !showLock && !showManual && matches.isEmpty() && !isLoading) {
+                if (search.isNotBlank() && !showManual && matches.isEmpty() && !isLoading) {
                     Text(stringResource(R.string.stream_button_no_service_matches))
                 }
             }
@@ -1012,7 +1066,8 @@ internal fun HomeAssistantEntityPicker(
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
     onSelect: (HomeAssistantEntity) -> Unit,
-    selectedEntityId: String? = null
+    selectedEntityId: String? = null,
+    @StringRes title: Int = R.string.stream_button_choose_entity
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     val matches = remember(entities, query) {
@@ -1025,7 +1080,7 @@ internal fun HomeAssistantEntityPicker(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.stream_button_choose_entity)) },
+        title = { Text(stringResource(title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -1111,8 +1166,7 @@ private fun isServiceId(value: String): Boolean =
 private fun isSelectOptionService(value: String): Boolean =
     value == "select.select_option" || value == "input_select.select_option"
 
-private fun serviceTargetDomains(id: String, isLock: Boolean, descriptor: HomeAssistantService?): Set<String> {
-    if (isLock) return StreamButtonAction.LOCK_DOMAINS
+private fun serviceTargetDomains(id: String, descriptor: HomeAssistantService?): Set<String> {
     if (isSelectOptionService(id)) return setOf(id.substringBefore('.'))
     val filters = descriptor?.target?.get("entity") ?: return emptySet()
     val entries = if (filters.isJsonArray) filters.asJsonArray.toList() else listOf(filters)
@@ -1137,10 +1191,11 @@ private fun parseJsonObject(value: String): JsonObject? {
     }.getOrNull()
 }
 
-private enum class EditorPicker { ENTITY, ICON, SERVICE, OPTION }
+private enum class EditorPicker { ENTITY, STATE_ENTITY, ICON, SERVICE, OPTION }
 
 private enum class ActionKind(@param:StringRes val label: Int, val domains: Set<String> = emptySet()) {
     CALL_SERVICE(R.string.stream_button_call_service),
+    DOOR_LOCK(R.string.stream_button_door_lock, StreamButtonAction.LOCK_DOMAINS),
     RUN_SCRIPT(R.string.stream_button_script, StreamButtonAction.SCRIPT_DOMAINS),
     TRIGGER_AUTOMATION(R.string.stream_button_trigger_automation, setOf("automation")),
     FIRE_EVENT(R.string.stream_button_fire_event),
@@ -1148,7 +1203,8 @@ private enum class ActionKind(@param:StringRes val label: Int, val domains: Set<
 
     companion object {
         fun from(action: StreamButtonAction?): ActionKind = when (action) {
-            null, is StreamButtonAction.CallService, is StreamButtonAction.DoorLock -> CALL_SERVICE
+            null, is StreamButtonAction.CallService -> CALL_SERVICE
+            is StreamButtonAction.DoorLock -> DOOR_LOCK
             is StreamButtonAction.RunScript -> RUN_SCRIPT
             is StreamButtonAction.TriggerAutomation -> TRIGGER_AUTOMATION
             is StreamButtonAction.FireEvent -> FIRE_EVENT

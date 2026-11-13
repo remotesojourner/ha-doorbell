@@ -39,8 +39,6 @@ class SaveSettingsUseCaseTest {
 
         coVerify {
             repository.saveSettings(
-                url = "https://home.local",
-                token = "token_abc",
                 source = "front_cam",
                 instantTwoWayAudio = true,
                 provider = "webrtc",

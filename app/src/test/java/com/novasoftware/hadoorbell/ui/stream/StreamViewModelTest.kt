@@ -68,8 +68,6 @@ class StreamViewModelTest {
     fun setup() {
         context = mockk(relaxed = true)
         appPreferences = mockk(relaxed = true) {
-            every { haUrlFlow } returns flowOf("https://test.url")
-            every { haTokenFlow } returns flowOf("token123")
             every { streamSourceFlow } returns flowOf("camera1")
             every { instantTwoWayAudioFlow } returns flowOf(false)
             every { webrtcProviderFlow } returns flowOf("webrtc")
@@ -198,6 +196,38 @@ class StreamViewModelTest {
     }
 
     @Test
+    fun `a lock uses the selected display entity without changing the lock it controls`() = runTest {
+        val lock = StreamButton(
+            "lock",
+            StreamButtonAction.DoorLock("lock.front"),
+            icon = "mdi:lock",
+            stateEntityId = "binary_sensor.front_door"
+        )
+        every { appPreferences.streamButtonLayoutFlow } returns flowOf(StreamButtonLayout(bottom = listOf(lock)))
+        val doorOpen = HomeAssistantEntityAppearance("on")
+        val doorClosed = HomeAssistantEntityAppearance("off")
+        coEvery { repository.getEntityAppearance("binary_sensor.front_door") } returnsMany listOf(
+            Result.success(doorOpen),
+            Result.success(doorClosed)
+        )
+        coEvery { repository.getEntityAppearance("lock.front") } returns
+            Result.success(HomeAssistantEntityAppearance("unlocked"))
+        every { lockDoorUseCase("lock.front") } returns flowOf(Result.success(LockState.Locked))
+
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+        assertEquals(doorOpen, viewModel.uiState.value.entityAppearances["binary_sensor.front_door"])
+        assertEquals(LockState.Unlocked, viewModel.uiState.value.lockStates["lock.front"])
+
+        viewModel.handleStreamButton(lock)
+        advanceUntilIdle()
+
+        verify(exactly = 1) { lockDoorUseCase("lock.front") }
+        assertEquals(doorClosed, viewModel.uiState.value.entityAppearances["binary_sensor.front_door"])
+        assertEquals(mapOf("lock.front" to LockState.Locked), viewModel.uiState.value.lockStates)
+    }
+
+    @Test
     fun `initializeConnection loads call action settings`() = runTest {
         every { appPreferences.answerActionServiceFlow } returns flowOf("switch.turn_on")
         every { appPreferences.answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
@@ -267,7 +297,7 @@ class StreamViewModelTest {
         val firstRequest = requests.single()
         assertEquals(press, firstRequest.button)
 
-        viewModel.cancelStreamButtonAuthentication()
+        viewModel.cancelAuthentication()
         viewModel.handleStreamButton(press)
         advanceUntilIdle()
         val secondRequest = requests.last()
@@ -280,6 +310,45 @@ class StreamViewModelTest {
         viewModel.onStreamButtonAuthentication(secondRequest, true)
         advanceUntilIdle()
         coVerify(exactly = 1) { repository.callService("button", "press", "button.door", JsonObject(), false) }
+    }
+
+    @Test
+    fun `settings opens only for the current successful authentication`() = runTest {
+        val protectedButton = StreamButton(
+            id = "door",
+            action = StreamButtonAction.CallService("button", "press", "button.door"),
+            requiresAuthentication = true
+        )
+        every { appPreferences.streamButtonLayoutFlow } returns
+            flowOf(StreamButtonLayout(top = listOf(protectedButton)))
+        val requests = mutableListOf<UiEvent.Authentication>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiEvent.collect { if (it is UiEvent.Authentication) requests.add(it) }
+        }
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+
+        viewModel.requestSettingsAuthentication()
+        viewModel.requestSettingsAuthentication()
+        viewModel.handleStreamButton(protectedButton)
+        advanceUntilIdle()
+
+        val canceled = requests.single() as UiEvent.AuthenticateSettings
+        assertFalse(viewModel.onSettingsAuthentication(canceled, succeeded = false))
+        viewModel.requestSettingsAuthentication()
+        advanceUntilIdle()
+        val leftScreen = requests.last() as UiEvent.AuthenticateSettings
+        viewModel.cancelAuthentication()
+        assertFalse(viewModel.onSettingsAuthentication(leftScreen, succeeded = true))
+
+        viewModel.requestSettingsAuthentication()
+        advanceUntilIdle()
+        val current = requests.last() as UiEvent.AuthenticateSettings
+        // The Android credential screen can stop the stream while authentication is pending.
+        viewModel.teardownConnection()
+        assertFalse(viewModel.onSettingsAuthentication(canceled, succeeded = true))
+        assertTrue(viewModel.onSettingsAuthentication(current, succeeded = true))
+        assertFalse(viewModel.onSettingsAuthentication(current, succeeded = true))
     }
 
     @Test

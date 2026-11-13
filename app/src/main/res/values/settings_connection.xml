@@ -1,0 +1,8 @@
+<resources>
+    <string name="settings_connection_save">Save connection</string>
+    <string name="settings_connection_required">Save the Home Assistant connection to edit the stream settings.</string>
+    <string name="settings_connection_checking">Checking the Home Assistant connection…</string>
+    <string name="settings_connection_verified">Home Assistant connection verified</string>
+    <string name="settings_connection_request_error">Could not connect to Home Assistant. Check the connection and try again.</string>
+    <string name="settings_connection_save_error">Could not save the Home Assistant connection. Try again.</string>
+</resources>

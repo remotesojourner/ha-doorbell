@@ -13,21 +13,20 @@ class AuthInterceptor @Inject constructor(
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val originalRequest = chain.request()
-        if (originalRequest.tag(DraftHomeAssistantConnection::class.java) != null) {
+        if (originalRequest.tag(ExplicitHomeAssistantConnection::class.java) != null) {
             return chain.proceed(originalRequest)
         }
         val requestBuilder = originalRequest.newBuilder()
 
-        val token = runBlocking { appPreferences.haTokenFlow.first() }
-        val baseUrl = runBlocking { appPreferences.haUrlFlow.first() }
+        val (baseUrl, token) = runBlocking { appPreferences.homeAssistantConnectionFlow.first() }
 
-        if (!token.isNullOrBlank()) {
+        if (token.isNotBlank()) {
             requestBuilder.addHeader("Authorization", "Bearer $token")
         }
 
         var request = requestBuilder.build()
 
-        if (!baseUrl.isNullOrBlank()) {
+        if (baseUrl.isNotBlank()) {
             val parsedBaseUrl = baseUrl.toHttpUrlOrNull()
             if (parsedBaseUrl != null) {
                 val newUrl = request.url.newBuilder()

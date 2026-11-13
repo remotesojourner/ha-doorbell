@@ -62,6 +62,7 @@ internal object StreamButtonLayoutJson {
                 button.icon?.let { addProperty("icon", it) }
                 button.entityIcon?.let { addProperty("entityIcon", it) }
                 button.entityName?.let { addProperty("entityName", it) }
+                button.stateEntityId?.let { addProperty("stateEntityId", it) }
                 add("action", encodeAction(button.action))
             })
         }
@@ -109,7 +110,8 @@ internal object StreamButtonLayoutJson {
             visible = if (button.has("visible")) button.boolean("visible") else true,
             icon = button.optionalString("icon"),
             entityIcon = button.optionalString("entityIcon"),
-            entityName = button.optionalString("entityName")
+            entityName = button.optionalString("entityName"),
+            stateEntityId = button.optionalString("stateEntityId")
         )
     }
 

@@ -162,6 +162,7 @@ class StreamButtonLayoutMigrationTest {
         assertFalse(migration.shouldMigrate(migrated))
         assertEquals(layout, decoded)
         assertEquals("light.porch", decoded.top.single().displayName)
+        assertEquals("light.porch", decoded.top.single().iconEntityId)
     }
 
     @Test

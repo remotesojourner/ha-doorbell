@@ -1,8 +1,14 @@
 package com.novasoftware.hadoorbell.data.remote
 
+import com.novasoftware.hadoorbell.data.repository.SettingsRepositoryImpl
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantConnection
+import io.mockk.every
+import io.mockk.mockk
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -12,6 +18,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.TimeUnit
 
 class HomeAssistantWebRtcClientTest {
 
@@ -24,10 +31,15 @@ class HomeAssistantWebRtcClientTest {
         mockWebServer.start()
 
         val baseUrl = mockWebServer.url("/").toString()
+        val preferences = mockk<SettingsRepositoryImpl> {
+            every { homeAssistantConnectionFlow } returns
+                flowOf(HomeAssistantConnection("http://localhost:1", "new_token"))
+        }
         signalingClient = HomeAssistantWebRtcClient(
             haUrl = baseUrl,
             token = "test_token",
-            streamName = "front_door"
+            streamName = "front_door",
+            client = OkHttpClient.Builder().addInterceptor(AuthInterceptor(preferences)).build()
         )
     }
 
@@ -109,6 +121,10 @@ class HomeAssistantWebRtcClientTest {
         
         // Assert the correct path was requested
         assert(isPathCorrect)
+        val authRequest = checkNotNull(mockWebServer.takeRequest(5, TimeUnit.SECONDS))
+        val streamRequest = checkNotNull(mockWebServer.takeRequest(5, TimeUnit.SECONDS))
+        assertEquals("Bearer test_token", authRequest.getHeader("Authorization"))
+        assertEquals("Bearer test_token", streamRequest.getHeader("Authorization"))
     }
 
     @Test

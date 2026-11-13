@@ -1,6 +1,5 @@
 package com.novasoftware.hadoorbell.ui.settings
 
-import android.content.Context
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -13,16 +12,24 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantEntitiesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantServicesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSettingsUseCase
+import com.novasoftware.hadoorbell.domain.usecase.SaveHomeAssistantConnectionUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SaveSettingsUseCase
 import com.novasoftware.hadoorbell.domain.model.Settings
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.flowOf
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -36,31 +43,36 @@ class SettingsScreenTest {
     @get:Rule
     val composeTestRule = createComposeRule()
 
-    private lateinit var context: Context
-    private lateinit var getSettingsUseCase: GetSettingsUseCase
-    private lateinit var saveSettingsUseCase: SaveSettingsUseCase
-    private val getHomeAssistantServices = io.mockk.mockk<GetHomeAssistantServicesUseCase>()
-    private val getHomeAssistantEntities = io.mockk.mockk<GetHomeAssistantEntitiesUseCase>()
+    private val getSettingsUseCase = mockk<GetSettingsUseCase>()
+    private val saveSettingsUseCase = mockk<SaveSettingsUseCase>(relaxed = true)
+    private val saveHomeAssistantConnection = mockk<SaveHomeAssistantConnectionUseCase>(relaxed = true)
+    private val getHomeAssistantServices = mockk<GetHomeAssistantServicesUseCase>()
+    private val getHomeAssistantEntities = mockk<GetHomeAssistantEntitiesUseCase>()
 
     @Before
     fun setup() {
-        context = ApplicationProvider.getApplicationContext()
-        val initialSettings = Settings(
-            url = "",
-            token = "",
-            streamSource = "",
-            instantTwoWayAudio = false,
-            webrtcProvider = "frigate"
-        )
-        getSettingsUseCase = io.mockk.mockk {
-            io.mockk.every { this@mockk.invoke() } returns kotlinx.coroutines.flow.flowOf(initialSettings)
+        coEvery { getHomeAssistantEntities(any(), any()) } returns Result.success(emptyList())
+    }
+
+    private fun viewModel(hasSavedConnection: Boolean = true): SettingsViewModel {
+        val initialSettings = if (hasSavedConnection) {
+            Settings(url = "https://test.local:8123", token = "my-token-123")
+        } else {
+            Settings()
         }
-        saveSettingsUseCase = io.mockk.mockk(relaxed = true)
+        every { getSettingsUseCase() } returns flowOf(initialSettings)
+        return SettingsViewModel(
+            getSettingsUseCase,
+            saveSettingsUseCase,
+            getHomeAssistantEntities,
+            getHomeAssistantServices,
+            saveHomeAssistantConnection
+        )
     }
 
     @Test
-    fun `settings screen displays input fields`() {
-        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities, getHomeAssistantServices)
+    fun `stream controls are disabled before saving a Home Assistant connection`() {
+        val viewModel = viewModel(hasSavedConnection = false)
         composeTestRule.setContent {
             androidx.compose.material3.MaterialTheme {
                 SettingsScreen(
@@ -78,20 +90,27 @@ class SettingsScreenTest {
         composeTestRule.onNodeWithText("Doorbell Setup").assertIsDisplayed()
         composeTestRule.onNodeWithText("Home Assistant URL").assertIsDisplayed()
         composeTestRule.onNodeWithText("Long-Lived Access Token").assertIsDisplayed()
-        composeTestRule.onNodeWithText("go2rtc Stream Name").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Save connection").performScrollTo().assertIsNotEnabled()
+        composeTestRule.onNodeWithText("go2rtc Stream Name").performScrollTo().assertIsNotEnabled()
         composeTestRule.onNodeWithText("Stream Buttons").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Add top button").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Add bottom button").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Add top button").performScrollTo().assertIsNotEnabled()
+        composeTestRule.onNodeWithText("Add bottom button").performScrollTo().assertIsNotEnabled()
+        composeTestRule.onNodeWithText("Call").performScrollTo().assertIsNotEnabled()
         composeTestRule.onNodeWithText("Quick Reply Entity ID").assertDoesNotExist()
         composeTestRule.onNodeWithText("Use custom stream buttons").assertDoesNotExist()
-        composeTestRule.onNodeWithText("Save & Connect", useUnmergedTree = true).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Save & Connect").assertIsNotEnabled()
     }
 
     @Test
-    fun `entering text updates the fields and clicking save triggers callback`() {
+    fun `connection save verifies credentials separately before stream settings can be saved`() {
         var saveClicked = false
+        val finishVerification = CompletableDeferred<Unit>()
+        coEvery { getHomeAssistantEntities(any(), any()) } coAnswers {
+            finishVerification.await()
+            Result.success(emptyList())
+        }
 
-        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities, getHomeAssistantServices)
+        val viewModel = viewModel(hasSavedConnection = false)
         composeTestRule.setContent {
             androidx.compose.material3.MaterialTheme {
                 SettingsScreen(
@@ -103,30 +122,38 @@ class SettingsScreenTest {
             }
         }
 
-        // Input text
         composeTestRule.onNodeWithText("Home Assistant URL")
-            .performTextInput("http://test.local:8123")
+            .performTextInput("https://test.local:8123")
         
         composeTestRule.onNodeWithText("Long-Lived Access Token")
             .performScrollTo()
             .performTextInput("my-token-123")
-            
+
+        composeTestRule.onNodeWithText("Save connection").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Checking the Home Assistant connection…").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Save connection").assertIsNotEnabled()
+        composeTestRule.onNodeWithText("Save & Connect").assertIsNotEnabled()
+        coVerify(exactly = 0) { saveHomeAssistantConnection(any(), any()) }
+
+        finishVerification.complete(Unit)
+        composeTestRule.onNodeWithText("Home Assistant connection verified").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Save & Connect").assertIsEnabled()
+        coVerify(exactly = 1) { saveHomeAssistantConnection("https://test.local:8123", "my-token-123") }
+        coVerify(exactly = 0) { saveSettingsUseCase(any()) }
+        assertFalse(saveClicked)
+
         composeTestRule.onNodeWithText("go2rtc Stream Name")
             .performScrollTo()
             .performTextInput("camera1")
 
-        // Click save
-        composeTestRule.onNodeWithText("Save & Connect", useUnmergedTree = true)
-            .performClick()
-
-        // Wait for coroutine to finish and assert callback was triggered
+        composeTestRule.onNodeWithText("Save & Connect").performClick()
         composeTestRule.waitForIdle()
-        org.junit.Assert.assertTrue(saveClicked)
+        assertTrue(saveClicked)
     }
 
     @Test
     fun `instant 2-way audio switch is disabled when quick reply is set`() {
-        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities, getHomeAssistantServices)
+        val viewModel = viewModel()
         composeTestRule.setContent {
             androidx.compose.material3.MaterialTheme {
                 SettingsScreen(
@@ -154,7 +181,7 @@ class SettingsScreenTest {
 
     @Test
     fun `instant 2-way audio switch can be toggled when quick reply is empty`() {
-        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities, getHomeAssistantServices)
+        val viewModel = viewModel()
         composeTestRule.setContent {
             androidx.compose.material3.MaterialTheme {
                 SettingsScreen(
@@ -177,7 +204,7 @@ class SettingsScreenTest {
 
     @Test
     fun `door and call actions are available through the button list`() {
-        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities, getHomeAssistantServices)
+        val viewModel = viewModel()
         composeTestRule.setContent {
             androidx.compose.material3.MaterialTheme {
                 SettingsScreen(
@@ -209,7 +236,7 @@ class SettingsScreenTest {
 
     @Test
     fun `webrtc provider options are displayed and can be selected`() {
-        val viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities, getHomeAssistantServices)
+        val viewModel = viewModel()
         composeTestRule.setContent {
             androidx.compose.material3.MaterialTheme {
                 SettingsScreen(

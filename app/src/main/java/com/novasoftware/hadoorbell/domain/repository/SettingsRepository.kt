@@ -1,11 +1,11 @@
 package com.novasoftware.hadoorbell.domain.repository
 
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantConnection
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import kotlinx.coroutines.flow.Flow
 
 interface SettingsRepository {
-    val haUrlFlow: Flow<String?>
-    val haTokenFlow: Flow<String?>
+    val homeAssistantConnectionFlow: Flow<HomeAssistantConnection>
     val streamSourceFlow: Flow<String?>
     val instantTwoWayAudioFlow: Flow<Boolean>
     val webrtcProviderFlow: Flow<String>
@@ -15,9 +15,9 @@ interface SettingsRepository {
     val hangupActionEntityIdFlow: Flow<String?>
     val streamButtonLayoutFlow: Flow<StreamButtonLayout>
 
+    suspend fun saveHomeAssistantConnection(url: String, token: String)
+
     suspend fun saveSettings(
-        url: String,
-        token: String,
         source: String,
         instantTwoWayAudio: Boolean = false,
         provider: String = "frigate",

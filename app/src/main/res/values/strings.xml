@@ -40,6 +40,8 @@
     <string name="stream_door_already_state">Door is already %1$s</string>
     <string name="stream_unlock_door">Unlock Door</string>
     <string name="stream_authenticate_unlock">Authenticate to unlock</string>
+    <string name="stream_settings_auth_title">Open Doorbell Settings</string>
+    <string name="stream_settings_auth_subtitle">Authenticate to open settings</string>
     <string name="authentication_setup_required">Set up a screen lock or fingerprint in Android Settings to use this action.</string>
     <string name="authentication_unavailable">Could not authenticate. Try again.</string>
     <string name="stream_quick_reply">Quick Reply</string>

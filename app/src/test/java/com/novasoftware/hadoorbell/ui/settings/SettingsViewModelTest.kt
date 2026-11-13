@@ -9,12 +9,14 @@ import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantEntitiesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantServicesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSettingsUseCase
+import com.novasoftware.hadoorbell.domain.usecase.SaveHomeAssistantConnectionUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SaveSettingsUseCase
 import com.novasoftware.hadoorbell.domain.model.Settings
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -24,6 +26,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
@@ -33,6 +36,7 @@ class SettingsViewModelTest {
 
     private lateinit var getSettingsUseCase: GetSettingsUseCase
     private lateinit var saveSettingsUseCase: SaveSettingsUseCase
+    private val saveHomeAssistantConnection = mockk<SaveHomeAssistantConnectionUseCase>(relaxed = true)
     private val getHomeAssistantServices = io.mockk.mockk<GetHomeAssistantServicesUseCase>()
     private lateinit var getHomeAssistantEntities: GetHomeAssistantEntitiesUseCase
     private lateinit var viewModel: SettingsViewModel
@@ -55,13 +59,23 @@ class SettingsViewModelTest {
         }
         saveSettingsUseCase = mockk(relaxed = true)
 
-        getHomeAssistantEntities = mockk()
-        viewModel = SettingsViewModel(getSettingsUseCase, saveSettingsUseCase, getHomeAssistantEntities, getHomeAssistantServices)
+        getHomeAssistantEntities = mockk {
+            coEvery { this@mockk.invoke("https://test.url", "token123") } returns Result.success(emptyList())
+        }
+        viewModel = SettingsViewModel(
+            getSettingsUseCase,
+            saveSettingsUseCase,
+            getHomeAssistantEntities,
+            getHomeAssistantServices,
+            saveHomeAssistantConnection
+        )
     }
 
     @Test
     fun `initialization loads values from use case`() = runTest {
         assertTrue(viewModel.uiState.value.isLoaded)
+        assertEquals(HomeAssistantConnectionStatus.Verified, viewModel.uiState.value.connectionStatus)
+        coVerify(exactly = 0) { saveHomeAssistantConnection(any(), any()) }
         assertEquals("https://test.url", viewModel.uiState.value.url)
         assertEquals("token123", viewModel.uiState.value.token)
         assertEquals("camera1", viewModel.uiState.value.streamSource)
@@ -98,16 +112,16 @@ class SettingsViewModelTest {
         var onCompleteCalled = false
         val onComplete = { onCompleteCalled = true }
 
-        viewModel.updateUrl("https://updated.url")
+        viewModel.updateStreamSource("new-camera")
 
         viewModel.saveSettings(onComplete)
 
         coVerify {
             saveSettingsUseCase(
                 Settings(
-                    url = "https://updated.url",
+                    url = "https://test.url",
                     token = "token123",
-                    streamSource = "camera1",
+                    streamSource = "new-camera",
                     instantTwoWayAudio = false,
                     webrtcProvider = "webrtc",
                     answerActionService = "switch.turn_on",
@@ -118,6 +132,7 @@ class SettingsViewModelTest {
             )
         }
         assertTrue(onCompleteCalled)
+        coVerify(exactly = 0) { saveHomeAssistantConnection(any(), any()) }
     }
 
     @Test
@@ -166,26 +181,33 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `entity lookup can use new credentials without saving them`() = runTest {
+    fun `changing servers requires a different token before verifying or saving`() = runTest {
         val entities = listOf(HomeAssistantEntity("script.greet_visitor", "Greet visitor"))
         viewModel.updateUrl("https://new.url")
-        viewModel.loadEntities()
+        viewModel.saveConnection()
 
-        assertEquals(HomeAssistantLoadError.ChangedServer, viewModel.uiState.value.entityLoadError)
-        coVerify(exactly = 0) { getHomeAssistantEntities(any(), any()) }
+        assertEquals(
+            HomeAssistantConnectionStatus.Failed(HomeAssistantLoadError.ChangedServer),
+            viewModel.uiState.value.connectionStatus
+        )
+        coVerify(exactly = 0) { getHomeAssistantEntities("https://new.url", any()) }
+        coVerify(exactly = 0) { saveHomeAssistantConnection(any(), any()) }
 
         viewModel.updateToken("new-token")
         coEvery { getHomeAssistantEntities("https://new.url", "new-token") } returns Result.success(entities)
-        viewModel.loadEntities()
+        viewModel.saveConnection()
 
+        assertEquals(HomeAssistantConnectionStatus.Verified, viewModel.uiState.value.connectionStatus)
         assertEquals(entities, viewModel.uiState.value.entities)
+        coVerify(exactly = 1) { saveHomeAssistantConnection("https://new.url", "new-token") }
         coVerify(exactly = 0) { saveSettingsUseCase(any()) }
         viewModel.updateUrl("https://other.url")
         assertTrue(viewModel.uiState.value.entities.isEmpty())
+        assertEquals(HomeAssistantConnectionStatus.Unchecked, viewModel.uiState.value.connectionStatus)
     }
 
     @Test
-    fun `service discovery uses the draft connection and resets after credentials change`() = runTest {
+    fun `discovery and saving stream settings require a verified connection`() = runTest {
         val catalog = listOf(HomeAssistantService("light", "turn_on"))
         coEvery { getHomeAssistantServices("https://test.url", "token123") } returns Result.success(catalog)
 
@@ -194,15 +216,58 @@ class SettingsViewModelTest {
 
         viewModel.updateUrl("https://new.url")
         viewModel.loadServices()
+        viewModel.loadEntities()
+        var saved = false
+        viewModel.saveSettings { saved = true }
         assertTrue(viewModel.uiState.value.services.isEmpty())
-        assertEquals(HomeAssistantLoadError.ChangedServer, viewModel.uiState.value.serviceLoadError)
+        assertFalse(saved)
         coVerify(exactly = 0) { getHomeAssistantServices("https://new.url", any()) }
+        coVerify(exactly = 0) { getHomeAssistantEntities("https://new.url", any()) }
+        coVerify(exactly = 0) { saveSettingsUseCase(any()) }
 
         viewModel.updateToken("new-token")
+        coEvery { getHomeAssistantEntities("https://new.url", "new-token") } returns Result.success(emptyList())
+        viewModel.saveConnection()
         coEvery { getHomeAssistantServices("https://new.url", "new-token") } returns Result.success(catalog)
         viewModel.loadServices()
         assertEquals(catalog, viewModel.uiState.value.services)
         coVerify(exactly = 0) { saveSettingsUseCase(any()) }
+    }
+
+    @Test
+    fun `connection save waits for Home Assistant and a failed check leaves credentials unsaved`() = runTest {
+        val verification = CompletableDeferred<Result<List<HomeAssistantEntity>>>()
+        coEvery { getHomeAssistantEntities("https://test.url", "wrong-token") } coAnswers { verification.await() }
+
+        viewModel.updateToken("wrong-token")
+        viewModel.saveConnection()
+        viewModel.saveConnection()
+
+        assertEquals(HomeAssistantConnectionStatus.Checking, viewModel.uiState.value.connectionStatus)
+        coVerify(exactly = 1) { getHomeAssistantEntities("https://test.url", "wrong-token") }
+        coVerify(exactly = 0) { saveHomeAssistantConnection(any(), any()) }
+        verification.complete(Result.failure(IOException()))
+        testScheduler.runCurrent()
+
+        assertEquals(
+            HomeAssistantConnectionStatus.Failed(HomeAssistantLoadError.RequestFailed),
+            viewModel.uiState.value.connectionStatus
+        )
+        coVerify(exactly = 0) { saveHomeAssistantConnection(any(), any()) }
+    }
+
+    @Test
+    fun `successful verification with a failed write leaves controls disabled`() = runTest {
+        coEvery { getHomeAssistantEntities("https://test.url", "new-token") } returns Result.success(emptyList())
+        coEvery { saveHomeAssistantConnection("https://test.url", "new-token") } throws IOException()
+
+        viewModel.updateToken("new-token")
+        viewModel.saveConnection()
+
+        assertEquals(
+            HomeAssistantConnectionStatus.Failed(HomeAssistantLoadError.ConnectionSaveFailed),
+            viewModel.uiState.value.connectionStatus
+        )
     }
 
     @Test
@@ -212,7 +277,8 @@ class SettingsViewModelTest {
         assertTrue(viewModel.importTokenFromQr("  $exampleToken\n"))
         assertEquals(exampleToken, viewModel.uiState.value.token)
         coVerify(exactly = 0) { saveSettingsUseCase(any()) }
-        coVerify(exactly = 0) { getHomeAssistantEntities(any(), any()) }
+        coVerify(exactly = 0) { saveHomeAssistantConnection(any(), any()) }
+        coVerify(exactly = 0) { getHomeAssistantEntities(any(), exampleToken) }
     }
 
     @Test

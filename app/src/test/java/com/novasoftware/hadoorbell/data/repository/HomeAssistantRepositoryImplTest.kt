@@ -2,8 +2,8 @@ package com.novasoftware.hadoorbell.data.repository
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import com.novasoftware.hadoorbell.data.remote.DraftHomeAssistantConnection
 import com.novasoftware.hadoorbell.data.remote.EntityStateResponse
+import com.novasoftware.hadoorbell.data.remote.ExplicitHomeAssistantConnection
 import com.novasoftware.hadoorbell.data.remote.HomeAssistantApi
 import com.novasoftware.hadoorbell.data.remote.ServiceDomainResponse
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
@@ -37,7 +37,7 @@ class HomeAssistantRepositoryImplTest {
             api.getEntities(
                 "https://draft.home:8123/api/states".toHttpUrl(),
                 "Bearer draft_token",
-                DraftHomeAssistantConnection
+                ExplicitHomeAssistantConnection
             )
         } returns listOf(
             EntityStateResponse(
@@ -108,7 +108,7 @@ class HomeAssistantRepositoryImplTest {
             api.getServices(
                 "https://draft.home:8123/api/services".toHttpUrl(),
                 "Bearer draft_token",
-                DraftHomeAssistantConnection
+                ExplicitHomeAssistantConnection
             )
         } returns listOf(ServiceDomainResponse("weather", serviceData))
 

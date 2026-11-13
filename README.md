@@ -39,7 +39,10 @@ When you first launch the app, you will be prompted for:
 
 1. **Home Assistant URL**: The local or remote URL to your Home Assistant instance that is accessible from the device (e.g., `https://192.168.1.100:8123`). **Note**: WebRTC strictly requires a secure HTTPS connection to function. Standard HTTP URLs will fail to establish a video/audio stream.
 2. **Long-Lived Access Token**: Create a token under **Profile → Security → Long-Lived Access Tokens** in Home Assistant. Select **Generate QR code** in the token dialog, then tap the scanner icon beside the access token field in HA Doorbell. You can also paste the token directly.
-3. **go2rtc Stream Name**: The exact name of the camera stream as configured in go2rtc config (e.g., `front_door_camera`).
+3. Tap **Save connection** to verify and save the Home Assistant URL and token. The stream settings become editable once the connection is verified.
+4. Enter the **go2rtc Stream Name** as configured in go2rtc (e.g., `front_door_camera`), then tap **Save & Connect**.
+
+After setup, tap the Settings gear on the stream and authenticate with your device to open Doorbell Setup. The gear opens directly on devices without a screen lock or enrolled biometrics.
 
 ### Stream Buttons
 
@@ -47,11 +50,13 @@ Open **Doorbell Setup → Stream Buttons** to add, edit, or reorder up to three 
 
 Choose **Call a service** to browse Home Assistant services, pick a target when needed, and enter any service data. Selecting `select.select_option` or `input_select.select_option` lets you choose an option from the entity's list. **Run a script** and **Trigger an automation** each have their own entity picker. **Fire an event** accepts an event name and optional data and requires a Home Assistant admin token.
 
-**Quick reply menu** opens the full reply list from the stream. The stream starts in listen-only mode with this button enabled so replies can play. Existing buttons keep their configured actions when you update. The built-in **Lock or unlock** choice under **Call a service** still decides which operation to run from the lock's current state. Migrated door and lock buttons prompt for authentication when the device has a secure screen lock. On devices without a screen lock or enrolled biometrics, those controls run directly.
+**Quick reply menu** opens the full reply list from the stream. The stream starts in listen-only mode with this button enabled so replies can play. Existing buttons keep their configured actions when you update. Choose **Lock or unlock** in the **Action** dropdown to operate a lock based on its current state and show that state on the stream. Migrated door and lock buttons prompt for authentication when the device has a secure screen lock. On devices without a screen lock or enrolled biometrics, those controls run directly.
 
 Tap **Call** in the list to set optional Answer and Hang Up services or start two-way audio immediately.
 
 Stream buttons display icons. Pick a Material Design Icon for any editable button, or leave it on **Automatic** to follow its Home Assistant entity. The app refreshes Automatic icons when the stream opens and after an action succeeds. When the entity has no explicit icon, built-in icons can reflect states such as a light being off or a cover being open.
+
+Choose a **State entity** to have the Automatic icon follow a different entity. For example, a button can run a script while showing whether the front door is locked. Leave the field empty to follow the action's target.
 
 ## Development
 

@@ -1,8 +1,8 @@
 package com.novasoftware.hadoorbell.data.repository
 
 import com.google.gson.JsonObject
-import com.novasoftware.hadoorbell.data.remote.DraftHomeAssistantConnection
 import com.novasoftware.hadoorbell.data.remote.EntityStateResponse
+import com.novasoftware.hadoorbell.data.remote.ExplicitHomeAssistantConnection
 import com.novasoftware.hadoorbell.data.remote.HomeAssistantApi
 import com.novasoftware.hadoorbell.data.remote.SetSelectOptionRequest
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
@@ -25,7 +25,7 @@ class HomeAssistantRepositoryImpl @Inject constructor(
 ) : HomeAssistantRepository {
     override suspend fun getEntities(url: String, token: String): Result<List<HomeAssistantEntity>> =
         discover(url, token, "/api/states") { endpoint, authorization ->
-            api.getEntities(endpoint, authorization, DraftHomeAssistantConnection).map { state ->
+            api.getEntities(endpoint, authorization, ExplicitHomeAssistantConnection).map { state ->
                 HomeAssistantEntity(
                     entityId = state.entityId,
                     name = (state.attributes?.get("friendly_name") as? String)
@@ -41,7 +41,7 @@ class HomeAssistantRepositoryImpl @Inject constructor(
 
     override suspend fun getServices(url: String, token: String): Result<List<HomeAssistantService>> =
         discover(url, token, "/api/services") { endpoint, authorization ->
-            api.getServices(endpoint, authorization, DraftHomeAssistantConnection)
+            api.getServices(endpoint, authorization, ExplicitHomeAssistantConnection)
                 .flatMap { domain ->
                     domain.services.entrySet().mapNotNull { (service, element) ->
                         val details = element.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null

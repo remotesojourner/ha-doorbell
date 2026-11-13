@@ -9,7 +9,15 @@ enum class HomeAssistantLoadError {
     ChangedServer,
     InvalidConnection,
     AuthenticationFailed,
-    RequestFailed
+    RequestFailed,
+    ConnectionSaveFailed
+}
+
+sealed interface HomeAssistantConnectionStatus {
+    data object Unchecked : HomeAssistantConnectionStatus
+    data object Checking : HomeAssistantConnectionStatus
+    data object Verified : HomeAssistantConnectionStatus
+    data class Failed(val error: HomeAssistantLoadError) : HomeAssistantConnectionStatus
 }
 
 data class SettingsUiState(
@@ -23,6 +31,7 @@ data class SettingsUiState(
     val hangupActionService: String = "",
     val hangupActionEntityId: String = "",
     val isLoaded: Boolean = false,
+    val connectionStatus: HomeAssistantConnectionStatus = HomeAssistantConnectionStatus.Unchecked,
     val streamButtonLayout: StreamButtonLayout = StreamButtonLayout(),
     val entities: List<HomeAssistantEntity> = emptyList(),
     val isLoadingEntities: Boolean = false,
