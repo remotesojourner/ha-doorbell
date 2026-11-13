@@ -11,6 +11,7 @@ data class StreamUiState(
     val webRtcManager: WebRtcManager? = null,
     val errorMessage: String? = null,
     val lockStates: Map<String, LockState> = emptyMap(),
+    val entityIcons: Map<String, String?> = emptyMap(),
     val isStreamMuted: Boolean = false,
     val isSwitchingModes: Boolean = false,
     val quickReplySheet: QuickReplySheetState? = null,

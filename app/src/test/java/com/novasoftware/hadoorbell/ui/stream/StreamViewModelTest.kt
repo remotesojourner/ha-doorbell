@@ -25,6 +25,7 @@ import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.flowOf
@@ -81,6 +82,7 @@ class StreamViewModelTest {
         
         repository = mockk(relaxed = true) {
             coEvery { getEntityState(any()) } returns Result.success("locked")
+            coEvery { getEntityIcon(any()) } returns Result.success(null)
             coEvery { callService(any(), any(), any()) } returns Result.success(Unit)
         }
         
@@ -121,6 +123,41 @@ class StreamViewModelTest {
         assertEquals(StreamButtonLayout(), uiState.streamButtonLayout)
         assertEquals(webRtcManager, uiState.webRtcManager)
         assertFalse(uiState.isMicEnabled) // instantTwoWayAudio is false
+    }
+
+    @Test
+    fun `automatic icons refresh once per visible entity without delaying WebRTC`() = runTest {
+        val lamp = StreamButton("lamp", "Porch light", StreamButtonAction.Toggle("light.porch"))
+        val lampAgain = lamp.copy(id = "lamp-copy")
+        val override = StreamButton("gate", "Gate", StreamButtonAction.Press("button.gate"), icon = "mdi:gate")
+        val hidden = StreamButton("hidden", "Hidden", StreamButtonAction.Toggle("switch.hidden"), visible = false)
+        val noIcon = StreamButton("reply", "Reply", StreamButtonAction.QuickReply("select.reply"), entityIcon = "mdi:chat")
+        val failed = StreamButton("script", "Script", StreamButtonAction.RunScript("script.front"), entityIcon = "mdi:star")
+        val layout = StreamButtonLayout(
+            top = listOf(lamp, override, hidden),
+            bottom = listOf(lampAgain, noIcon, failed)
+        )
+        every { appPreferences.streamButtonLayoutFlow } returns flowOf(layout)
+        val response = CompletableDeferred<Result<String?>>()
+        coEvery { repository.getEntityIcon("light.porch") } coAnswers { response.await() }
+        coEvery { repository.getEntityIcon("script.front") } returns Result.failure(IllegalStateException())
+
+        viewModel.initializeConnection(context)
+        runCurrent()
+
+        assertEquals(webRtcManager, viewModel.uiState.value.webRtcManager)
+        assertEquals(mapOf<String, String?>("select.reply" to null), viewModel.uiState.value.entityIcons)
+        coVerify(exactly = 1) { repository.getEntityIcon("light.porch") }
+        coVerify(exactly = 0) { repository.getEntityIcon("button.gate") }
+        coVerify(exactly = 0) { repository.getEntityIcon("switch.hidden") }
+
+        response.complete(Result.success("mdi:outdoor-lamp"))
+        advanceUntilIdle()
+
+        assertEquals(
+            mapOf("light.porch" to "mdi:outdoor-lamp", "select.reply" to null),
+            viewModel.uiState.value.entityIcons
+        )
     }
 
     @Test

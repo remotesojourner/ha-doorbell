@@ -11,6 +11,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -28,7 +29,7 @@ class HomeAssistantRepositoryImplTest {
     }
 
     @Test
-    fun `getEntities uses the draft server and maps friendly names and options`() = runTest {
+    fun `getEntities uses the draft server and maps friendly names options and icons`() = runTest {
         coEvery {
             api.getEntities(
                 "https://draft.home:8123/api/states".toHttpUrl(),
@@ -38,7 +39,11 @@ class HomeAssistantRepositoryImplTest {
         } returns listOf(
             EntityStateResponse(
                 "select.reply", "Go away",
-                mapOf("friendly_name" to "Doorbell replies", "options" to listOf("Go away", "Leave at door"))
+                mapOf(
+                    "friendly_name" to "Doorbell replies",
+                    "options" to listOf("Go away", "Leave at door"),
+                    "icon" to "mdi:message-text"
+                )
             ),
             EntityStateResponse("lock.front_door", "locked", null)
         )
@@ -47,11 +52,24 @@ class HomeAssistantRepositoryImplTest {
 
         assertEquals(
             listOf(
-                HomeAssistantEntity("select.reply", "Doorbell replies", listOf("Go away", "Leave at door")),
+                HomeAssistantEntity(
+                    "select.reply", "Doorbell replies", listOf("Go away", "Leave at door"),
+                    icon = "mdi:message-text"
+                ),
                 HomeAssistantEntity("lock.front_door", "lock.front_door")
             ),
             entities
         )
+    }
+
+    @Test
+    fun `live entity icon comes from state attributes when available`() = runTest {
+        coEvery { api.getEntityState("light.porch") } returns
+            EntityStateResponse("light.porch", "on", mapOf("icon" to "mdi:outdoor-lamp"))
+        coEvery { api.getEntityState("switch.relay") } returns EntityStateResponse("switch.relay", "off", null)
+
+        assertEquals("mdi:outdoor-lamp", repository.getEntityIcon("light.porch").getOrThrow())
+        assertNull(repository.getEntityIcon("switch.relay").getOrThrow())
     }
 
     @Test

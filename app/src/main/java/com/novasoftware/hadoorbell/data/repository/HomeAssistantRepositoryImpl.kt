@@ -2,6 +2,7 @@ package com.novasoftware.hadoorbell.data.repository
 
 import com.novasoftware.hadoorbell.data.remote.CallServiceRequest
 import com.novasoftware.hadoorbell.data.remote.DraftHomeAssistantConnection
+import com.novasoftware.hadoorbell.data.remote.EntityStateResponse
 import com.novasoftware.hadoorbell.data.remote.HomeAssistantApi
 import com.novasoftware.hadoorbell.data.remote.SetSelectOptionRequest
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
@@ -41,7 +42,8 @@ class HomeAssistantRepositoryImpl @Inject constructor(
                     name = (state.attributes?.get("friendly_name") as? String)
                         ?.takeIf { it.isNotBlank() } ?: state.entityId,
                     options = (state.attributes?.get("options") as? List<*>).orEmpty()
-                        .filterIsInstance<String>()
+                        .filterIsInstance<String>(),
+                    icon = state.icon()
                 )
             })
         } catch (e: CancellationException) {
@@ -58,6 +60,14 @@ class HomeAssistantRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    override suspend fun getEntityIcon(entityId: String): Result<String?> = try {
+        Result.success(api.getEntityState(entityId).icon())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     override suspend fun callService(domain: String, service: String, entityId: String?): Result<Unit> = withContext(Dispatchers.IO) {
@@ -93,4 +103,7 @@ class HomeAssistantRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
+
+    private fun EntityStateResponse.icon(): String? =
+        (attributes?.get("icon") as? String)?.trim()?.takeIf { it.isNotEmpty() }
 }

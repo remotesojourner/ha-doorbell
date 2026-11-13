@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -55,6 +56,9 @@ import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.usecase.OpenDoorUseCase
+import com.novasoftware.hadoorbell.ui.icons.StreamButtonIcon
+import com.novasoftware.hadoorbell.ui.icons.defaultHomeAssistantIcon
+import com.novasoftware.hadoorbell.ui.icons.rememberStreamButtonIconChoices
 import java.util.UUID
 
 @Composable
@@ -298,8 +302,13 @@ private fun EditStreamButtonDialog(
     var requiresAuthentication by rememberSaveable {
         mutableStateOf(existing?.requiresAuthentication ?: false)
     }
+    var icon by rememberSaveable { mutableStateOf(existing?.icon) }
+    var cachedEntityIcon by rememberSaveable { mutableStateOf(existing?.entityIcon) }
     var showPicker by rememberSaveable { mutableStateOf(false) }
+    var showIconPicker by rememberSaveable { mutableStateOf(false) }
     val entity = entities.find { it.entityId == entityId }
+    val currentEntityIcon = entity?.icon ?: cachedEntityIcon
+    val automaticIcon = currentEntityIcon ?: entityId?.let(::defaultHomeAssistantIcon)
     val defaultDoorService = if (kind == ActionKind.OPEN_DOOR) {
         OpenDoorUseCase.defaultServiceFor(entityId.orEmpty())
     } else ""
@@ -330,8 +339,24 @@ private fun EditStreamButtonDialog(
                     }
                     entityId = selected.entityId
                     option = null
+                    cachedEntityIcon = selected.icon
+                } else if (selected.icon != null) {
+                    cachedEntityIcon = selected.icon
                 }
                 showPicker = false
+            }
+        )
+        return
+    }
+
+    if (showIconPicker) {
+        StreamButtonIconPicker(
+            icon = icon,
+            automaticIcon = automaticIcon,
+            onDismiss = { showIconPicker = false },
+            onSelect = {
+                icon = it
+                showIconPicker = false
             }
         )
         return
@@ -358,6 +383,7 @@ private fun EditStreamButtonDialog(
                             entityId?.let { currentEntityId ->
                                 if (!nextKind.acceptsDomain(currentEntityId.substringBefore('.'))) {
                                     entityId = null
+                                    cachedEntityIcon = null
                                 }
                             }
                             option = null
@@ -449,6 +475,25 @@ private fun EditStreamButtonDialog(
                     singleLine = true
                 )
 
+                Column {
+                    Text(
+                        stringResource(R.string.stream_button_icon),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    OutlinedButton(
+                        onClick = { showIconPicker = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        IconPreview(icon ?: automaticIcon)
+                        Text(
+                            text = icon?.let(::iconDisplayName) ?: stringResource(R.string.stream_button_icon_auto),
+                            modifier = Modifier.padding(start = 8.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
                 if (kind.requiresAuthentication) {
                     Text(
                         text = stringResource(
@@ -495,7 +540,9 @@ private fun EditStreamButtonDialog(
                                 label = label.trim(),
                                 action = action,
                                 requiresAuthentication = kind.requiresAuthentication || requiresAuthentication,
-                                visible = existing?.visible ?: true
+                                visible = existing?.visible ?: true,
+                                icon = icon,
+                                entityIcon = currentEntityIcon
                             )
                         )
                     }
@@ -506,6 +553,84 @@ private fun EditStreamButtonDialog(
         }
     )
 }
+
+@Composable
+private fun StreamButtonIconPicker(
+    icon: String?,
+    automaticIcon: String?,
+    onDismiss: () -> Unit,
+    onSelect: (String?) -> Unit
+) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val catalog = rememberStreamButtonIconChoices()
+    val matches = remember(catalog, query) {
+        val search = query.trim().lowercase().removePrefix("mdi:").replace(' ', '-')
+        val found = catalog.filter { it.contains(search) }
+        if (search in found) listOf(search) + (found - search) else found
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.stream_button_choose_icon)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text(stringResource(R.string.stream_button_icon_search)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                IconChoice(
+                    label = stringResource(R.string.stream_button_icon_auto),
+                    icon = automaticIcon,
+                    selected = icon == null,
+                    onClick = { onSelect(null) }
+                )
+                if (matches.isEmpty()) {
+                    Text(stringResource(R.string.stream_button_icon_no_matches))
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                        items(matches, key = { it }) { name ->
+                            IconChoice(
+                                label = iconDisplayName(name),
+                                icon = name,
+                                selected = icon?.removePrefix("mdi:") == name,
+                                onClick = { onSelect(name) }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun IconChoice(label: String, icon: String?, selected: Boolean, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(label) },
+        leadingContent = { IconPreview(icon) },
+        modifier = Modifier.clickable(onClick = onClick),
+        colors = ListItemDefaults.colors(
+            containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer
+            else MaterialTheme.colorScheme.surface
+        )
+    )
+}
+
+@Composable
+private fun IconPreview(icon: String?) {
+    if (icon == null) Icon(Icons.Default.Widgets, contentDescription = null)
+    else StreamButtonIcon(icon, contentDescription = null)
+}
+
+private fun iconDisplayName(icon: String): String = icon.removePrefix("mdi:").replace('-', ' ')
 
 @Composable
 private fun <T> EditorChoice(

@@ -93,6 +93,8 @@ import com.novasoftware.hadoorbell.core.utils.BiometricPromptHelper
 import com.novasoftware.hadoorbell.domain.model.LockState
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
+import com.novasoftware.hadoorbell.ui.icons.StreamButtonIcon
+import com.novasoftware.hadoorbell.ui.icons.resolveStreamButtonIcon
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 
@@ -409,6 +411,7 @@ internal fun StreamBottomControls(
                         button = button,
                         enabled = uiState.canRun(button),
                         lockState = uiState.lockStates[button.action.entityId] ?: LockState.Unknown,
+                        entityIcons = uiState.entityIcons,
                         onClick = { onButtonClick(button) },
                         circleSize = actionSize
                     )
@@ -495,6 +498,7 @@ private fun RowScope.StreamActions(
                     button = button,
                     enabled = uiState.canRun(button),
                     lockState = uiState.lockStates[button.action.entityId] ?: LockState.Unknown,
+                    entityIcons = uiState.entityIcons,
                     onClick = { onButtonClick(button) }
                 )
             }
@@ -507,11 +511,12 @@ private fun StreamActionButton(
     button: StreamButton,
     enabled: Boolean,
     lockState: LockState,
+    entityIcons: Map<String, String?>,
     onClick: () -> Unit,
     circleSize: Dp? = null
 ) {
     val isLock = button.action is StreamButtonAction.DoorLock
-    val icon = when (button.action) {
+    val fallbackIcon = when (button.action) {
         is StreamButtonAction.Toggle -> Icons.Default.ToggleOn
         is StreamButtonAction.Press -> Icons.Default.TouchApp
         is StreamButtonAction.SelectOption -> Icons.AutoMirrored.Filled.List
@@ -547,7 +552,11 @@ private fun StreamActionButton(
     val lockSemantics = if (lockDescription == null) Modifier else Modifier.semantics {
         stateDescription = lockDescription
     }
-    val rotation = if (isLock && (lockState == LockState.Locking || lockState == LockState.Unlocking)) {
+    val entityId = button.action.entityId
+    val resolvedIcon = resolveStreamButtonIcon(button, entityIcons[entityId], entityIcons.containsKey(entityId))
+    val rotation = if (resolvedIcon == null && isLock &&
+        (lockState == LockState.Locking || lockState == LockState.Unlocking)
+    ) {
         val transition = rememberInfiniteTransition(label = "lock")
         val angle by transition.animateFloat(
             initialValue = 0f,
@@ -557,6 +566,14 @@ private fun StreamActionButton(
         )
         angle
     } else 0f
+    val renderIcon: @Composable (Dp, String?) -> Unit = { size, description ->
+        val modifier = Modifier.size(size)
+        if (resolvedIcon == null) {
+            Icon(fallbackIcon, description, modifier.rotate(rotation))
+        } else {
+            StreamButtonIcon(resolvedIcon, description, modifier)
+        }
+    }
 
     if (circleSize != null) {
         val legacyLabel = when (button.action) {
@@ -580,11 +597,7 @@ private fun StreamActionButton(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = button.label,
-                        modifier = Modifier.size(24.dp).rotate(rotation)
-                    )
+                    renderIcon(24.dp, button.label)
                     Text(
                         text = button.label,
                         modifier = Modifier.clearAndSetSemantics { },
@@ -596,11 +609,7 @@ private fun StreamActionButton(
                 }
             } else {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = button.label,
-                        modifier = Modifier.size(28.dp).rotate(rotation)
-                    )
+                    renderIcon(28.dp, button.label)
                 }
             }
         }
@@ -620,7 +629,7 @@ private fun StreamActionButton(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp).rotate(rotation))
+            renderIcon(20.dp, null)
             Text(
                 text = button.label,
                 style = MaterialTheme.typography.labelSmall,

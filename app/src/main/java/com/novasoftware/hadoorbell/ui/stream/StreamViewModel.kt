@@ -87,6 +87,7 @@ class StreamViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     lockStates = emptyMap(),
+                    entityIcons = emptyMap(),
                     answerActionService = answerService,
                     answerActionEntityId = answerEntity,
                     hangupActionService = hangupService,
@@ -110,7 +111,20 @@ class StreamViewModel @Inject constructor(
             val manager = webRtcManagerFactory.create(context, signalingClient, viewModelScope)
             _uiState.update { it.copy(webRtcManager = manager) }
 
-            layout.buttons.filter(StreamButton::visible)
+            val visibleButtons = layout.buttons.filter(StreamButton::visible)
+            visibleButtons.asSequence()
+                .filter { it.icon.isNullOrBlank() }
+                .map { it.action.entityId }
+                .distinct()
+                .forEach { entityId ->
+                    launch {
+                        repository.getEntityIcon(entityId).onSuccess { icon ->
+                            _uiState.update { it.copy(entityIcons = it.entityIcons + (entityId to icon)) }
+                        }
+                    }
+                }
+
+            visibleButtons
                 .mapNotNull { (it.action as? StreamButtonAction.DoorLock)?.entityId }
                 .distinct()
                 .forEach { entityId ->

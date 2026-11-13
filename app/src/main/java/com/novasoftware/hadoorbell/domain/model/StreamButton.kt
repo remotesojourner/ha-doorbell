@@ -5,7 +5,9 @@ data class StreamButton(
     val label: String,
     val action: StreamButtonAction,
     val requiresAuthentication: Boolean = false,
-    val visible: Boolean = true
+    val visible: Boolean = true,
+    val icon: String? = null,
+    val entityIcon: String? = null
 )
 
 data class StreamButtonLayout(

@@ -37,7 +37,12 @@ class StreamButtonEditorTest {
     fun `adding a select button saves the chosen entity and option`() {
         var layout by mutableStateOf(StreamButtonLayout())
         val entities = listOf(
-            HomeAssistantEntity("select.doorbell_reply", "Doorbell replies", listOf("Leave parcel", "Busy")),
+            HomeAssistantEntity(
+                "select.doorbell_reply",
+                "Doorbell replies",
+                listOf("Leave parcel", "Busy"),
+                icon = "mdi:message-text"
+            ),
             HomeAssistantEntity("select.alarm_mode", "Alarm mode", listOf("Home")),
             HomeAssistantEntity("switch.door_relay", "Door relay")
         )
@@ -67,6 +72,9 @@ class StreamButtonEditorTest {
         composeTestRule.onNodeWithText("Doorbell replies").performClick()
         composeTestRule.onNodeWithText("Choose an option").performClick()
         composeTestRule.onNodeWithText("Leave parcel").performClick()
+        composeTestRule.onNodeWithText("Automatic").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Search icon names").performTextInput("mdi:package-variant")
+        composeTestRule.onNodeWithText("package variant").performClick()
         composeTestRule.onNodeWithText("Done").performClick()
 
         composeTestRule.runOnIdle {
@@ -76,6 +84,17 @@ class StreamButtonEditorTest {
                 layout.top.single().action
             )
             assertEquals("Leave parcel", layout.top.single().label)
+            assertEquals("package-variant", layout.top.single().icon)
+            assertEquals("mdi:message-text", layout.top.single().entityIcon)
+        }
+
+        composeTestRule.onNodeWithText("Leave parcel").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("package variant").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Automatic").performClick()
+        composeTestRule.onNodeWithText("Done").performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(null, layout.top.single().icon)
+            assertEquals("mdi:message-text", layout.top.single().entityIcon)
         }
     }
 

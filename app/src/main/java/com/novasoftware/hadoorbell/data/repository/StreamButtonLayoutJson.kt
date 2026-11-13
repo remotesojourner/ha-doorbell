@@ -38,6 +38,8 @@ internal object StreamButtonLayoutJson {
                 addProperty("label", button.label)
                 addProperty("requiresAuthentication", button.requiresAuthentication)
                 addProperty("visible", button.visible)
+                button.icon?.let { addProperty("icon", it) }
+                button.entityIcon?.let { addProperty("entityIcon", it) }
                 add("action", encodeAction(button.action))
             })
         }
@@ -74,7 +76,9 @@ internal object StreamButtonLayoutJson {
             label = button.string("label"),
             action = decodeAction(button.getAsJsonObject("action")),
             requiresAuthentication = button.boolean("requiresAuthentication"),
-            visible = if (button.has("visible")) button.boolean("visible") else true
+            visible = if (button.has("visible")) button.boolean("visible") else true,
+            icon = button.optionalString("icon"),
+            entityIcon = button.optionalString("entityIcon")
         )
     }
 
@@ -95,6 +99,10 @@ internal object StreamButtonLayoutJson {
     private fun JsonObject.string(key: String): String =
         getAsJsonPrimitive(key).takeIf { it.isString }?.asString
             ?: error("Invalid stream button field: $key")
+
+    private fun JsonObject.optionalString(key: String): String? =
+        get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+            ?.asString?.trim()?.takeIf { it.isNotEmpty() }
 
     private fun JsonObject.boolean(key: String): Boolean =
         getAsJsonPrimitive(key).takeIf { it.isBoolean }?.asBoolean

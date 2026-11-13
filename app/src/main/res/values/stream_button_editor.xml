@@ -20,6 +20,11 @@
     <string name="stream_button_action">Action</string>
     <string name="stream_button_action_summary">%1$s · %2$s</string>
     <string name="stream_button_label">Button label</string>
+    <string name="stream_button_icon">Icon</string>
+    <string name="stream_button_choose_icon">Choose icon</string>
+    <string name="stream_button_icon_auto">Automatic</string>
+    <string name="stream_button_icon_search">Search icon names</string>
+    <string name="stream_button_icon_no_matches">No icons match your search.</string>
     <string name="stream_button_option">Option</string>
     <string name="stream_button_choose_option">Choose an option</string>
     <string name="stream_button_current_option">Selected option: %1$s</string>

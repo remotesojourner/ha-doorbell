@@ -83,12 +83,17 @@ class SettingsRepositoryImplTest {
     }
 
     @Test
-    fun `saved layouts preserve row order and protected actions`() = runTest {
+    fun `saved layouts preserve row order protected actions and icons`() = runTest {
         val unlock = StreamButton(
             "unlock", "Unlock", StreamButtonAction.TurnOn("switch.door_relay"),
-            requiresAuthentication = true
+            requiresAuthentication = true,
+            icon = "mdi:gate",
+            entityIcon = "mdi:toggle-switch"
         )
-        val light = StreamButton("light", "Porch light", StreamButtonAction.Toggle("light.porch"))
+        val light = StreamButton(
+            "light", "Porch light", StreamButtonAction.Toggle("light.porch"),
+            entityIcon = "mdi:outdoor-lamp"
+        )
         val reply = StreamButton(
             "reply", "Leave at door", StreamButtonAction.SelectOption("select.reply", "Leave at door")
         )

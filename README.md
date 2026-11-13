@@ -49,6 +49,8 @@ Choose an action and pick a Home Assistant entity by name or ID. Buttons can tog
 
 Existing door, lock, and quick reply settings move into the button list when you update. Tap **Call** in the list to set optional Answer and Hang Up services or start two-way audio immediately. With a Quick Reply button configured, the stream starts in listen-only mode so replies can play.
 
+Pick a Material Design Icon for any editable button. **Automatic** uses the icon reported by Home Assistant and falls back to a built-in icon when Home Assistant leaves it unspecified.
+
 ## Development
 
 This project leverages the following major external libraries:
