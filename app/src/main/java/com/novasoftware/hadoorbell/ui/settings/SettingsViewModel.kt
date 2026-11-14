@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.JsonParseException
 import com.google.gson.JsonParser
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import com.novasoftware.hadoorbell.domain.model.Settings
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.model.normalizeHomeAssistantUrl
+import com.novasoftware.hadoorbell.domain.repository.HomeAssistantRepository
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantEntitiesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantServicesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSettingsUseCase
@@ -15,10 +17,14 @@ import com.novasoftware.hadoorbell.domain.usecase.SaveHomeAssistantConnectionUse
 import com.novasoftware.hadoorbell.domain.usecase.SaveSettingsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
@@ -34,7 +40,8 @@ class SettingsViewModel @Inject constructor(
     private val saveSettingsUseCase: SaveSettingsUseCase,
     private val getHomeAssistantEntities: GetHomeAssistantEntitiesUseCase,
     private val getHomeAssistantServices: GetHomeAssistantServicesUseCase,
-    private val saveHomeAssistantConnection: SaveHomeAssistantConnectionUseCase
+    private val saveHomeAssistantConnection: SaveHomeAssistantConnectionUseCase,
+    private val homeAssistantRepository: HomeAssistantRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -180,6 +187,19 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    internal fun observeEntityAppearances(
+        entityIds: Set<String>
+    ): Flow<Map<String, HomeAssistantEntityAppearance>> {
+        if (entityIds.isEmpty() || _uiState.value.connectionStatus != HomeAssistantConnectionStatus.Verified) {
+            return emptyFlow()
+        }
+        return homeAssistantRepository.observeEntityAppearances(entityIds).retryWhen { failure, _ ->
+            if (failure !is IOException) return@retryWhen false
+            delay(APPEARANCE_RETRY_DELAY_MS)
+            true
+        }
+    }
+
     fun loadServices() {
         val state = _uiState.value
         if (state.connectionStatus != HomeAssistantConnectionStatus.Verified || state.isLoadingServices) return
@@ -284,6 +304,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     private companion object {
+        const val APPEARANCE_RETRY_DELAY_MS = 5_000L
         // Home Assistant encodes access tokens as compact, URL-safe JWTs.
         val TOKEN_QR_PATTERN = Regex("[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+")
     }

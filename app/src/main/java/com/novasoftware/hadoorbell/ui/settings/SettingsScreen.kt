@@ -343,7 +343,8 @@ fun SettingsScreen(
                         isLoadingServices = uiState.isLoadingServices,
                         serviceLoadError = serviceLoadError,
                         onLoadServices = viewModel::loadServices,
-                        enabled = canEditStreamSettings
+                        enabled = canEditStreamSettings,
+                        onObserveAppearances = viewModel::observeEntityAppearances
                     )
                 }
             }

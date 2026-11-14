@@ -525,27 +525,36 @@ private fun StreamActionButton(
 ) {
     val isLock = button.action is StreamButtonAction.DoorLock
     val fallbackIcon = streamButtonFallbackIcon(button.action, lockState)
-    val lockDescription = if (isLock) stringResource(
-        when (lockState) {
-            LockState.Locked -> R.string.stream_lock_locked
-            LockState.Unlocked -> R.string.stream_lock_unlocked
-            LockState.Locking -> R.string.stream_lock_locking
-            LockState.Unlocking -> R.string.stream_lock_unlocking
-            LockState.Jammed -> R.string.stream_lock_jammed
-            LockState.Unknown -> R.string.stream_lock_unknown
-        }
-    ) else null
-    val background = when {
-        isLock && lockState == LockState.Unlocked -> Color.Red.copy(alpha = 0.8f)
-        isLock && lockState == LockState.Jammed -> Color(0xFFFFA500)
-        isLock && (lockState == LockState.Locking || lockState == LockState.Unlocking) -> Color.Gray.copy(alpha = 0.8f)
-        isLock && lockState == LockState.Unknown -> Color.DarkGray.copy(alpha = 0.8f)
-        else -> Color.White.copy(alpha = 0.2f)
+    val usesStateEntity = !button.stateEntityId.isNullOrBlank()
+    val stateEntityLockState = if (usesStateEntity && button.iconEntityId.startsWith("lock.")) {
+        LockState.fromString(entityAppearance?.state)
+    } else null
+    val displayedLockState = if (isLock) lockState else stateEntityLockState
+    val lockDescription = displayedLockState?.let { state ->
+        stringResource(
+            when (state) {
+                LockState.Locked -> R.string.stream_lock_locked
+                LockState.Unlocked -> R.string.stream_lock_unlocked
+                LockState.Locking -> R.string.stream_lock_locking
+                LockState.Unlocking -> R.string.stream_lock_unlocking
+                LockState.Jammed -> R.string.stream_lock_jammed
+                LockState.Unknown -> R.string.stream_lock_unknown
+            }
+        )
     }
-    val entityDescription = entityAppearance?.state?.takeIf {
-        it.isNotBlank() && !button.stateEntityId.isNullOrBlank() &&
-            (!isLock || button.iconEntityId != button.action.entityId)
+    val background = when (displayedLockState) {
+        LockState.Unlocked -> Color.Red.copy(alpha = 0.8f)
+        LockState.Jammed -> Color(0xFFFFA500)
+        LockState.Locking, LockState.Unlocking -> Color.Gray.copy(alpha = 0.8f)
+        LockState.Unknown -> Color.DarkGray.copy(alpha = 0.8f)
+        LockState.Locked, null -> Color.White.copy(alpha = 0.2f)
     }
+    val hasSeparateStateDescription = if (isLock) {
+        usesStateEntity && button.iconEntityId != button.action.entityId
+    } else {
+        usesStateEntity && stateEntityLockState == null
+    }
+    val entityDescription = entityAppearance?.state?.takeIf { hasSeparateStateDescription && it.isNotBlank() }
     val description = listOfNotNull(lockDescription, entityDescription).joinToString()
     val stateSemantics = if (description.isEmpty()) Modifier else Modifier.semantics {
         stateDescription = description

@@ -4,6 +4,7 @@ import com.google.gson.JsonObject
 import com.novasoftware.hadoorbell.data.remote.EntityStateResponse
 import com.novasoftware.hadoorbell.data.remote.ExplicitHomeAssistantConnection
 import com.novasoftware.hadoorbell.data.remote.HomeAssistantApi
+import com.novasoftware.hadoorbell.data.remote.HomeAssistantStateClient
 import com.novasoftware.hadoorbell.data.remote.SetSelectOptionRequest
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
@@ -11,17 +12,26 @@ import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantServiceField
 import com.novasoftware.hadoorbell.domain.model.normalizeHomeAssistantUrl
 import com.novasoftware.hadoorbell.domain.repository.HomeAssistantRepository
+import com.novasoftware.hadoorbell.domain.repository.SettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class HomeAssistantRepositoryImpl @Inject constructor(
-    private val api: HomeAssistantApi
+    private val api: HomeAssistantApi,
+    private val settings: SettingsRepository,
+    private val stateClient: HomeAssistantStateClient
 ) : HomeAssistantRepository {
     override suspend fun getEntities(url: String, token: String): Result<List<HomeAssistantEntity>> =
         discover(url, token, "/api/states") { endpoint, authorization ->
@@ -64,17 +74,20 @@ class HomeAssistantRepositoryImpl @Inject constructor(
         token: String,
         path: String,
         request: suspend (HttpUrl, String) -> T
-    ): Result<T> {
+    ): Result<T> = requestResult {
+        request(homeAssistantEndpoint(url, path), "Bearer ${accessToken(token)}")
+    }
+
+    private fun homeAssistantEndpoint(url: String, path: String): HttpUrl {
         val baseUrl = normalizeHomeAssistantUrl(url).toHttpUrlOrNull()
-        if (baseUrl == null || !baseUrl.isHttps || baseUrl.username.isNotEmpty() || baseUrl.password.isNotEmpty()) {
-            return Result.failure(IllegalArgumentException("Enter a valid Home Assistant HTTPS URL"))
+        require(baseUrl != null && baseUrl.isHttps && baseUrl.username.isEmpty() && baseUrl.password.isEmpty()) {
+            "Enter a valid Home Assistant HTTPS URL"
         }
-        val accessToken = token.trim()
-        if (accessToken.isEmpty()) {
-            return Result.failure(IllegalArgumentException("Enter a Home Assistant access token"))
-        }
-        val endpoint = baseUrl.newBuilder().encodedPath(path).query(null).fragment(null).build()
-        return requestResult { request(endpoint, "Bearer $accessToken") }
+        return baseUrl.newBuilder().encodedPath(path).query(null).fragment(null).build()
+    }
+
+    private fun accessToken(token: String): String = token.trim().also {
+        require(it.isNotEmpty()) { "Enter a Home Assistant access token" }
     }
 
     override suspend fun getEntityState(entityId: String): Result<String> = withContext(Dispatchers.IO) {
@@ -91,6 +104,21 @@ class HomeAssistantRepositoryImpl @Inject constructor(
             val entity = api.getEntityState(entityId)
             HomeAssistantEntityAppearance(entity.state, entity.attribute("icon"), entity.attribute("device_class"))
         }
+
+    override fun observeEntityAppearances(
+        entityIds: Set<String>
+    ): Flow<Map<String, HomeAssistantEntityAppearance>> {
+        if (entityIds.isEmpty()) return flowOf(emptyMap())
+        return flow {
+            val (url, token) = settings.homeAssistantConnectionFlow.first()
+            val appearances = try {
+                stateClient.observe(homeAssistantEndpoint(url, "/api/websocket"), accessToken(token), entityIds)
+            } catch (error: IllegalArgumentException) {
+                throw IOException("Invalid Home Assistant entity subscription connection", error)
+            }
+            emitAll(appearances)
+        }
+    }
 
     override suspend fun callService(domain: String, service: String, entityId: String?): Result<Unit> =
         callService(domain, service, entityId, JsonObject())

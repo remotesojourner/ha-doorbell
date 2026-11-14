@@ -42,6 +42,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +59,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.Strictness
@@ -65,6 +67,7 @@ import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonToken
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
 import com.novasoftware.hadoorbell.domain.model.LockState
 import com.novasoftware.hadoorbell.domain.model.StreamButton
@@ -76,6 +79,8 @@ import com.novasoftware.hadoorbell.ui.icons.StreamButtonIcon
 import com.novasoftware.hadoorbell.ui.icons.rememberStreamButtonIconChoices
 import com.novasoftware.hadoorbell.ui.icons.resolveStreamButtonIcon
 import com.novasoftware.hadoorbell.ui.icons.streamButtonFallbackIcon
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import java.io.StringReader
 import java.util.UUID
 
@@ -92,10 +97,32 @@ internal fun StreamButtonEditor(
     isLoadingServices: Boolean = false,
     serviceLoadError: String? = null,
     onLoadServices: () -> Unit = {},
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    onObserveAppearances: (Set<String>) -> Flow<Map<String, HomeAssistantEntityAppearance>> = { emptyFlow() }
 ) {
     var editingRow by rememberSaveable(enabled) { mutableStateOf<ButtonRow?>(null) }
     var editingId by rememberSaveable(enabled) { mutableStateOf<String?>(null) }
+    var draftEntityIds by remember(enabled) { mutableStateOf(emptySet<String>()) }
+    val observedIds = buildSet {
+        if (enabled) {
+            layout.buttons.forEach { button ->
+                if (button.icon.isNullOrBlank() || !button.stateEntityId.isNullOrBlank()) add(button.iconEntityId)
+                if (button.action is StreamButtonAction.DoorLock) add(button.action.entityId)
+            }
+            if (editingRow != null) addAll(draftEntityIds)
+        }
+    }.filterTo(mutableSetOf(), String::isNotBlank)
+    val appearances = key(observedIds) {
+        val updates = remember(observedIds, onObserveAppearances) { onObserveAppearances(observedIds) }
+        updates.collectAsStateWithLifecycle(initialValue = null).value
+    }
+    val resolveAppearance: (String) -> HomeAssistantEntityAppearance? = { entityId ->
+        if (appearances != null && entityId in observedIds) {
+            appearances[entityId] ?: HomeAssistantEntityAppearance("unavailable")
+        } else {
+            entities.find { it.entityId == entityId }?.appearance
+        }
+    }
 
     ButtonRow.entries.forEach { row ->
         val buttons = row.buttons(layout)
@@ -122,10 +149,10 @@ internal fun StreamButtonEditor(
                 key(button.id) {
                     StreamButtonListItem(
                         button = button,
-                        iconEntity = entities.find { it.entityId == button.iconEntityId },
+                        iconEntityName = entities.find { it.entityId == button.iconEntityId }?.name,
+                        appearance = resolveAppearance(button.iconEntityId),
                         lockState = if (button.action is StreamButtonAction.DoorLock) {
-                            entities.find { it.entityId == button.action.entityId }?.state
-                                ?.let(LockState::fromString) ?: LockState.Locked
+                            LockState.fromString(resolveAppearance(button.action.entityId)?.state)
                         } else {
                             LockState.Unknown
                         },
@@ -180,6 +207,7 @@ internal fun StreamButtonEditor(
         val dismiss = {
             editingRow = null
             editingId = null
+            draftEntityIds = emptySet()
         }
         EditStreamButtonDialog(
             existing = existing,
@@ -191,6 +219,8 @@ internal fun StreamButtonEditor(
             isLoadingServices = isLoadingServices,
             serviceLoadError = serviceLoadError,
             onLoadServices = onLoadServices,
+            resolveAppearance = resolveAppearance,
+            onObserveDraft = { draftEntityIds = it },
             onDismiss = dismiss,
             onSave = { button ->
                 val buttons = row.buttons(layout)
@@ -228,7 +258,8 @@ private fun FixedButton(
 @Composable
 private fun StreamButtonListItem(
     button: StreamButton,
-    iconEntity: HomeAssistantEntity?,
+    iconEntityName: String?,
+    appearance: HomeAssistantEntityAppearance?,
     lockState: LockState,
     enabled: Boolean,
     onEdit: () -> Unit,
@@ -251,7 +282,7 @@ private fun StreamButtonListItem(
     }
     val actionSummary = details?.let { stringResource(R.string.stream_button_action_summary, actionLabel, it) }
         ?: actionLabel
-    val icon = resolveStreamButtonIcon(button, iconEntity?.appearance)
+    val icon = resolveStreamButtonIcon(button, appearance)
     ListItem(
         headlineContent = {
             Row(
@@ -277,6 +308,15 @@ private fun StreamButtonListItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                button.stateEntityId?.takeIf(String::isNotBlank)?.let { entityId ->
+                    val name = iconEntityName ?: entityId
+                    val state = appearance?.state?.takeIf(String::isNotBlank)
+                    Text(
+                        state?.let { stringResource(R.string.stream_button_state_summary, name, it) } ?: name,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 if (!button.visible) Text(stringResource(R.string.stream_button_hidden))
             }
         },
@@ -361,6 +401,8 @@ private fun EditStreamButtonDialog(
     isLoadingServices: Boolean,
     serviceLoadError: String?,
     onLoadServices: () -> Unit,
+    resolveAppearance: (String) -> HomeAssistantEntityAppearance?,
+    onObserveDraft: (Set<String>) -> Unit,
     onDismiss: () -> Unit,
     onSave: (StreamButton) -> Unit
 ) {
@@ -401,13 +443,20 @@ private fun EditStreamButtonDialog(
     val entity = entities.find { it.entityId == entityId }
     val iconEntityId = stateEntityId?.takeIf(String::isNotBlank) ?: entityId.orEmpty()
     val iconEntity = entities.find { it.entityId == iconEntityId }
+    val appearance = resolveAppearance(iconEntityId)
     val cachedEntityIcon = existing?.entityIcon?.takeIf { existing.iconEntityId == iconEntityId }
-    val currentEntityIcon = if (iconEntity != null) iconEntity.icon else cachedEntityIcon
+    val currentEntityIcon = if (appearance != null) appearance.icon else cachedEntityIcon
     val currentEntityName = entity?.name?.takeIf(String::isNotBlank) ?: cachedEntityName
     val service = serviceId.trim()
     val selectedService = services.find { serviceId(it) == service }
     val isService = kind == ActionKind.CALL_SERVICE
     val isLockAction = kind == ActionKind.DOOR_LOCK
+    SideEffect {
+        onObserveDraft(buildSet {
+            if (iconEntityId.isNotBlank()) add(iconEntityId)
+            if (isLockAction) entityId?.let(::add)
+        })
+    }
     val isDoorRelease = isService && savedService?.doorRelease == true
     val selectOption = isService && isSelectOptionService(service)
     val optionalTarget = isService && !selectOption && !isDoorRelease
@@ -445,10 +494,10 @@ private fun EditStreamButtonDialog(
             ?.let { StreamButtonAction.FireEvent(trimmedEvent, it) }
         ActionKind.QUICK_REPLY -> entityId?.let(StreamButtonAction::QuickReply)
     }
-    val automaticIcon = resolveStreamButtonIcon(action, iconEntityId, null, cachedEntityIcon, iconEntity?.appearance)
+    val automaticIcon = resolveStreamButtonIcon(action, iconEntityId, null, cachedEntityIcon, appearance)
     val previewIcon = if (icon == null) automaticIcon else
-        resolveStreamButtonIcon(action, iconEntityId, icon, cachedEntityIcon, iconEntity?.appearance)
-    val lockState = entity?.state?.let(LockState::fromString) ?: LockState.Locked
+        resolveStreamButtonIcon(action, iconEntityId, icon, cachedEntityIcon, appearance)
+    val lockState = if (isLockAction) LockState.fromString(resolveAppearance(target)?.state) else LockState.Unknown
     val fallbackIcon = action?.let { streamButtonFallbackIcon(it, lockState) } ?: Icons.Default.Widgets
 
     fun clearEntity() {
@@ -684,7 +733,7 @@ private fun EditStreamButtonDialog(
                         picker = EditorPicker.STATE_ENTITY
                     }
                 )
-                iconEntity?.state?.takeIf(String::isNotBlank)?.let { state ->
+                appearance?.state?.takeIf(String::isNotBlank)?.let { state ->
                     Text(
                         stringResource(R.string.stream_button_current_state, state),
                         style = MaterialTheme.typography.bodySmall,

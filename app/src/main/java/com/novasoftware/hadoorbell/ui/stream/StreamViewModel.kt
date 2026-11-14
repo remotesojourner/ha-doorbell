@@ -10,9 +10,11 @@ import com.novasoftware.hadoorbell.domain.usecase.CallActionUseCase
 import com.novasoftware.hadoorbell.domain.usecase.ExecuteStreamButtonUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSelectOptionsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.LockDoorUseCase
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import com.novasoftware.hadoorbell.domain.model.LockState
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.usecase.SendQuickReplyUseCase
 import com.novasoftware.hadoorbell.domain.usecase.UnlockDoorUseCase
 import com.novasoftware.hadoorbell.core.webrtc.WebRtcClientFactory
@@ -38,6 +40,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.webrtc.VideoSink
+import java.io.IOException
 import javax.inject.Inject
 
 sealed class UiEvent {
@@ -73,13 +76,17 @@ class StreamViewModel @Inject constructor(
     private var callAnswered = false
     private var initializeJob: Job? = null
     private var appearanceRefreshJob: Job? = null
+    private var appearanceObserverJob: Job? = null
+    private var observedEntityIds = emptySet<String>()
+    private var observedLockIds = emptySet<String>()
+    private var hasLiveAppearances = false
     private var answerJob: Job? = null
     private var quickReplyLoadJob: Job? = null
     private var pendingAuthentication: UiEvent.Authentication? = null
 
     fun initializeConnection(context: Context) {
         initializeJob?.cancel()
-        appearanceRefreshJob?.cancel()
+        stopButtonAppearanceUpdates()
         isScreenActive = true
         initializeJob = viewModelScope.launch {
             val layout = appPreferences.streamButtonLayoutFlow.first()
@@ -103,6 +110,7 @@ class StreamViewModel @Inject constructor(
             (pendingAuthentication as? UiEvent.AuthenticateStreamButton)?.let { request ->
                 if (!isConfiguredButton(request.button)) cancelAuthentication()
             }
+            startButtonAppearanceUpdates(layout)
 
             val instantTwoWay = appPreferences.instantTwoWayAudioFlow.first()
             val micEnabled = instantTwoWay && !layout.hasQuickReply
@@ -114,24 +122,74 @@ class StreamViewModel @Inject constructor(
             val signalingClient = webRtcClientFactory.createClient()
             val manager = webRtcManagerFactory.create(context, signalingClient, viewModelScope)
             _uiState.update { it.copy(webRtcManager = manager) }
-
-            refreshButtonAppearances()
         }
+    }
+
+    private fun startButtonAppearanceUpdates(layout: StreamButtonLayout) {
+        val buttons = layout.buttons.filter(StreamButton::visible)
+        val lockIds = buttons.mapNotNull { (it.action as? StreamButtonAction.DoorLock)?.entityId }
+            .filter(String::isNotBlank).toSet()
+        val entityIds = (buttons
+            .filter { it.icon.isNullOrBlank() || !it.stateEntityId.isNullOrBlank() }
+            .map(StreamButton::iconEntityId)
+            .filter(String::isNotBlank).toSet() + lockIds)
+        if (entityIds.isEmpty()) return
+
+        observedEntityIds = entityIds
+        observedLockIds = lockIds
+        refreshButtonAppearances()
+        appearanceObserverJob = viewModelScope.launch {
+            var retryDelay = APPEARANCE_RETRY_INITIAL_MS
+            while (true) {
+                try {
+                    repository.observeEntityAppearances(entityIds).collect { snapshot ->
+                        ensureActive()
+                        val firstSnapshot = !hasLiveAppearances
+                        hasLiveAppearances = true
+                        retryDelay = APPEARANCE_RETRY_INITIAL_MS
+                        appearanceRefreshJob?.cancel()
+                        val appearances = entityIds.associateWith { snapshot[it] ?: UNAVAILABLE_APPEARANCE }
+                        _uiState.update { state ->
+                            val lockUpdates = lockIds
+                                .filter {
+                                    appearances[it]?.state != state.entityAppearances[it]?.state ||
+                                        firstSnapshot && it !in state.runningLockEntityIds
+                                }
+                                .associateWith { LockState.fromString(appearances[it]?.state) }
+                            state.copy(
+                                entityAppearances = appearances,
+                                lockStates = state.lockStates + lockUpdates
+                            )
+                        }
+                    }
+                } catch (_: IOException) {
+                    // Keep the last state visible while the socket reconnects.
+                }
+                hasLiveAppearances = false
+                delay(retryDelay)
+                refreshButtonAppearances()
+                retryDelay = (retryDelay * 2).coerceAtMost(APPEARANCE_RETRY_MAX_MS)
+            }
+        }
+    }
+
+    private fun stopButtonAppearanceUpdates() {
+        appearanceObserverJob?.cancel()
+        appearanceObserverJob = null
+        appearanceRefreshJob?.cancel()
+        appearanceRefreshJob = null
+        observedEntityIds = emptySet()
+        observedLockIds = emptySet()
+        hasLiveAppearances = false
     }
 
     private fun refreshButtonAppearances(afterAction: Boolean = false, completedLockId: String? = null) {
         val currentState = _uiState.value
-        if (!isScreenActive || !currentState.isStreamButtonLayoutReady) return
-
-        val buttons = currentState.streamButtonLayout.buttons.filter(StreamButton::visible)
-        val lockIds = buttons.mapNotNull { (it.action as? StreamButtonAction.DoorLock)?.entityId }.toSet()
-        val entityIds = (buttons
-            .filter { it.icon.isNullOrBlank() || !it.stateEntityId.isNullOrBlank() }
-            .map(StreamButton::iconEntityId)
-            .toSet() + lockIds).filter(String::isNotBlank)
+        val entityIds = observedEntityIds
+        val lockIds = observedLockIds
+        if (!isScreenActive || hasLiveAppearances || entityIds.isEmpty()) return
 
         appearanceRefreshJob?.cancel()
-        if (entityIds.isEmpty()) return
         appearanceRefreshJob = viewModelScope.launch {
             suspend fun refresh() = coroutineScope {
                 entityIds.forEach { entityId ->
@@ -178,8 +236,7 @@ class StreamViewModel @Inject constructor(
         isScreenActive = false
         initializeJob?.cancel()
         initializeJob = null
-        appearanceRefreshJob?.cancel()
-        appearanceRefreshJob = null
+        stopButtonAppearanceUpdates()
         dismissQuickReplySheet()
         answerJob?.cancel()
         answerJob = null
@@ -468,7 +525,9 @@ class StreamViewModel @Inject constructor(
     }
 
     private fun executeLockAction(button: StreamButton, entityId: String, unlock: Boolean) {
-        if (entityId in _uiState.value.runningLockEntityIds) return
+        val initialState = _uiState.value
+        if (entityId in initialState.runningLockEntityIds) return
+        val initialEntityState = initialState.entityAppearances[entityId]?.state
         _uiState.update { it.copy(runningLockEntityIds = it.runningLockEntityIds + entityId) }
         viewModelScope.launch {
             val expectedState = if (unlock) LockState.Unlocked else LockState.Locked
@@ -477,7 +536,17 @@ class StreamViewModel @Inject constructor(
                 val updates = if (unlock) unlockDoorUseCase(entityId) else lockDoorUseCase(entityId)
                 updates.collect { result ->
                     val state = result.getOrDefault(LockState.Unknown)
-                    updateLockState(entityId, state)
+                    _uiState.update { uiState ->
+                        val appearance = uiState.entityAppearances[entityId]
+                        val displayedState = if (hasLiveAppearances && appearance != null &&
+                            (appearance.state != initialEntityState || result.isFailure)
+                        ) {
+                            LockState.fromString(appearance.state)
+                        } else {
+                            state
+                        }
+                        uiState.copy(lockStates = uiState.lockStates + (entityId to displayedState))
+                    }
                     completed = result.isSuccess && state == expectedState
                     result.onFailure { showButtonFailure(button, it) }
                 }
@@ -486,10 +555,6 @@ class StreamViewModel @Inject constructor(
             }
             if (completed) refreshButtonAppearances(afterAction = true, completedLockId = entityId)
         }
-    }
-
-    private fun updateLockState(entityId: String, lockState: LockState) {
-        _uiState.update { it.copy(lockStates = it.lockStates + (entityId to lockState)) }
     }
 
     private suspend fun showButtonFailure(button: StreamButton, error: Throwable) {
@@ -510,5 +575,8 @@ class StreamViewModel @Inject constructor(
         private const val CALL_ACTION_TIMEOUT_MS = 10_000L
         private const val CONNECTION_TIMEOUT_MS = 15_000L
         private const val APPEARANCE_FOLLOW_UP_MS = 1_000L
+        private const val APPEARANCE_RETRY_INITIAL_MS = 5_000L
+        private const val APPEARANCE_RETRY_MAX_MS = 30_000L
+        private val UNAVAILABLE_APPEARANCE = HomeAssistantEntityAppearance("unavailable")
     }
 }

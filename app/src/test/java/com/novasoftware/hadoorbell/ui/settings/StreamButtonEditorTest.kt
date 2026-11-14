@@ -22,10 +22,13 @@ import androidx.compose.ui.Modifier
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.gson.JsonObject
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -172,6 +175,7 @@ class StreamButtonEditorTest {
             HomeAssistantEntity("script.toggle_porch", "Toggle porch", icon = "mdi:script-text"),
             HomeAssistantEntity("light.porch", "Porch light", icon = "mdi:lightbulb-off", state = "off")
         )
+        val liveAppearances = MutableStateFlow(entities.associate { it.entityId to it.appearance })
         composeTestRule.setContent {
             MaterialTheme {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -181,7 +185,10 @@ class StreamButtonEditorTest {
                         isLoadingEntities = false,
                         entityLoadError = null,
                         onLoadEntities = {},
-                        onLayoutChange = { layout = it }
+                        onLayoutChange = { layout = it },
+                        onObserveAppearances = { ids ->
+                            liveAppearances.map { snapshot -> snapshot.filterKeys { it in ids } }
+                        }
                     )
                 }
             }
@@ -192,13 +199,20 @@ class StreamButtonEditorTest {
         composeTestRule.onNodeWithText("Choose a state entity").assertIsDisplayed()
         composeTestRule.onNodeWithText("Porch light").performClick()
         composeTestRule.onNodeWithText("Current state: off").performScrollTo().assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            liveAppearances.value += "light.porch" to HomeAssistantEntityAppearance("on", "mdi:lightbulb-on")
+        }
+        composeTestRule.onNodeWithText("Current state: on").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Done").performClick()
         composeTestRule.runOnIdle {
             assertEquals(
-                script.copy(stateEntityId = "light.porch", entityIcon = "mdi:lightbulb-off"),
+                script.copy(stateEntityId = "light.porch", entityIcon = "mdi:lightbulb-on"),
                 layout.top.single()
             )
         }
+        composeTestRule.onNodeWithText("Porch light · on").performScrollTo().assertIsDisplayed()
+        composeTestRule.runOnIdle { liveAppearances.value -= "light.porch" }
+        composeTestRule.onNodeWithText("Porch light · unavailable").performScrollTo().assertIsDisplayed()
 
         composeTestRule.onNodeWithText("Toggle porch").performScrollTo().performClick()
         composeTestRule.onNodeWithText("Use action target").performScrollTo().performClick()

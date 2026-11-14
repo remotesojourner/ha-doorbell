@@ -12,6 +12,7 @@ import com.novasoftware.hadoorbell.domain.usecase.GetSettingsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SaveHomeAssistantConnectionUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SaveSettingsUseCase
 import com.novasoftware.hadoorbell.domain.model.Settings
+import com.novasoftware.hadoorbell.domain.repository.HomeAssistantRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -67,7 +68,8 @@ class SettingsViewModelTest {
             saveSettingsUseCase,
             getHomeAssistantEntities,
             getHomeAssistantServices,
-            saveHomeAssistantConnection
+            saveHomeAssistantConnection,
+            mockk<HomeAssistantRepository>()
         )
     }
 

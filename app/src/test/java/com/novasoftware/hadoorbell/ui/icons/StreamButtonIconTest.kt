@@ -61,5 +61,7 @@ class StreamButtonIconTest {
         compose.onNodeWithContentDescription("lock").assertIsDisplayed()
         compose.runOnIdle { appearance.value = HomeAssistantEntityAppearance("unlocked") }
         compose.onNodeWithContentDescription("lock-open-variant").assertIsDisplayed()
+        compose.runOnIdle { appearance.value = HomeAssistantEntityAppearance("unavailable") }
+        compose.onNodeWithContentDescription("help-circle-outline").assertIsDisplayed()
     }
 }

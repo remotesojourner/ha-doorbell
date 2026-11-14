@@ -5,30 +5,42 @@ import com.google.gson.JsonParser
 import com.novasoftware.hadoorbell.data.remote.EntityStateResponse
 import com.novasoftware.hadoorbell.data.remote.ExplicitHomeAssistantConnection
 import com.novasoftware.hadoorbell.data.remote.HomeAssistantApi
+import com.novasoftware.hadoorbell.data.remote.HomeAssistantStateClient
 import com.novasoftware.hadoorbell.data.remote.ServiceDomainResponse
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantConnection
+import com.novasoftware.hadoorbell.domain.repository.SettingsRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeAssistantRepositoryImplTest {
 
     private lateinit var api: HomeAssistantApi
+    private lateinit var settings: SettingsRepository
+    private lateinit var stateClient: HomeAssistantStateClient
     private lateinit var repository: HomeAssistantRepositoryImpl
 
     @Before
     fun setup() {
         api = mockk(relaxed = true)
-        repository = HomeAssistantRepositoryImpl(api)
+        settings = mockk()
+        stateClient = mockk()
+        repository = HomeAssistantRepositoryImpl(api, settings, stateClient)
     }
 
     @Test
@@ -81,6 +93,32 @@ class HomeAssistantRepositoryImplTest {
             HomeAssistantEntityAppearance("off", deviceClass = "outlet"),
             repository.getEntityAppearance("switch.relay").getOrThrow()
         )
+    }
+
+    @Test
+    fun `entity observation uses the saved Home Assistant connection and only the requested IDs`() = runTest {
+        val ids = setOf("light.porch", "lock.front_door")
+        val endpoint = "https://home.example:8123/api/websocket".toHttpUrl()
+        val snapshot = mapOf("light.porch" to HomeAssistantEntityAppearance("off"))
+        every { settings.homeAssistantConnectionFlow } returns flowOf(
+            HomeAssistantConnection(" https://home.example:8123/ ", " saved_token ")
+        )
+        every { stateClient.observe(endpoint, "saved_token", ids) } returns flowOf(snapshot)
+
+        assertEquals(snapshot, repository.observeEntityAppearances(ids).first())
+        verify(exactly = 1) { stateClient.observe(endpoint, "saved_token", ids) }
+    }
+
+    @Test
+    fun `entity observation rejects invalid saved credentials without connecting`() = runTest {
+        every { settings.homeAssistantConnectionFlow } returns flowOf(HomeAssistantConnection("ftp://home.local", "token"))
+
+        val failure = runCatching {
+            repository.observeEntityAppearances(setOf("light.porch")).first()
+        }.exceptionOrNull()
+
+        assertTrue(failure is IOException)
+        verify(exactly = 0) { stateClient.observe(any(), any(), any()) }
     }
 
     @Test

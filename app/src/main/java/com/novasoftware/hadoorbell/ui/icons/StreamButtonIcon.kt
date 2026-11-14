@@ -98,10 +98,15 @@ internal fun resolveStreamButtonIcon(
 ): String? {
     val context = LocalContext.current
     val icons = remember(context) { MaterialDesignIcons.glyphs(context) }
+    selectedIcon?.iconName()?.takeIf(icons::containsKey)?.let { return it }
+
+    val usesDedicatedLockIcon = action is StreamButtonAction.DoorLock && entityId == action.entityId
+    if (!usesDedicatedLockIcon && (entityAppearance?.state == "unavailable" || entityAppearance?.state == "unknown")) {
+        return "help-circle-outline"
+    }
+
     val entityIcon = if (entityAppearance != null) entityAppearance.icon else cachedEntityIcon
-    val resolved = selectedIcon?.iconName()?.takeIf(icons::containsKey)
-        ?: entityIcon?.iconName()?.takeIf(icons::containsKey)
-    if (resolved != null) return resolved
+    entityIcon?.iconName()?.takeIf(icons::containsKey)?.let { return it }
 
     val hasActionIcon = when (action) {
         is StreamButtonAction.DoorLock, is StreamButtonAction.QuickReply -> true

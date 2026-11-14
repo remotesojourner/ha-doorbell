@@ -29,6 +29,9 @@ import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -43,6 +46,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.webrtc.VideoSink
+import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class StreamViewModelTest {
@@ -79,6 +83,7 @@ class StreamViewModelTest {
         }
         
         repository = mockk(relaxed = true) {
+            every { observeEntityAppearances(any()) } returns flow { awaitCancellation() }
             coEvery { getEntityAppearance(any()) } returns Result.success(HomeAssistantEntityAppearance("locked"))
             coEvery { callService(any(), any(), any()) } returns Result.success(Unit)
             coEvery { callService(any(), any(), any(), any(), any()) } returns Result.success(Unit)
@@ -161,6 +166,109 @@ class StreamViewModelTest {
             mapOf("light.porch" to lampAppearance, "select.reply" to replyAppearance),
             viewModel.uiState.value.entityAppearances
         )
+    }
+
+    @Test
+    fun `external changes follow the selected entity until the stream closes`() = runTest {
+        val entityId = "binary_sensor.front_door"
+        val button = StreamButton("gate", StreamButtonAction.RunScript("script.open_gate"), stateEntityId = entityId)
+        every { appPreferences.streamButtonLayoutFlow } returns flowOf(StreamButtonLayout(top = listOf(button)))
+        val snapshots = MutableSharedFlow<Map<String, HomeAssistantEntityAppearance>>()
+        var stopped = false
+        every { repository.observeEntityAppearances(setOf(entityId)) } returns flow {
+            try {
+                snapshots.collect { emit(it) }
+            } finally {
+                stopped = true
+            }
+        }
+        val stale = CompletableDeferred<Result<HomeAssistantEntityAppearance>>()
+        coEvery { repository.getEntityAppearance(entityId) } coAnswers { stale.await() }
+
+        viewModel.initializeConnection(context)
+        runCurrent()
+        val open = HomeAssistantEntityAppearance("on", deviceClass = "door")
+        val closed = HomeAssistantEntityAppearance("off", deviceClass = "door")
+        snapshots.emit(mapOf(entityId to open))
+        stale.complete(Result.success(closed))
+        assertEquals(open, viewModel.uiState.value.entityAppearances[entityId])
+
+        snapshots.emit(mapOf(entityId to closed))
+        assertEquals(closed, viewModel.uiState.value.entityAppearances[entityId])
+        snapshots.emit(emptyMap())
+        assertEquals("unavailable", viewModel.uiState.value.entityAppearances[entityId]?.state)
+        coVerify(exactly = 0) { repository.callService(any(), any(), any(), any(), any()) }
+
+        viewModel.teardownConnection()
+        assertTrue(stopped)
+        snapshots.emit(mapOf(entityId to open))
+        assertEquals("unavailable", viewModel.uiState.value.entityAppearances[entityId]?.state)
+    }
+
+    @Test
+    fun `lock state resyncs on reconnect and external lock removal makes it unknown`() = runTest {
+        val entityId = "lock.front"
+        val lock = StreamButton("lock", StreamButtonAction.DoorLock(entityId))
+        every { appPreferences.streamButtonLayoutFlow } returns flowOf(StreamButtonLayout(top = listOf(lock)))
+        val dropConnection = CompletableDeferred<Unit>()
+        val unlocked = HomeAssistantEntityAppearance("unlocked")
+        val locked = HomeAssistantEntityAppearance("locked")
+        val reconnect = MutableSharedFlow<Map<String, HomeAssistantEntityAppearance>>(replay = 1)
+        every { repository.observeEntityAppearances(setOf(entityId)) } returnsMany listOf(
+            flow {
+                emit(mapOf(entityId to locked))
+                dropConnection.await()
+                throw IOException("Socket closed")
+            },
+            reconnect
+        )
+        var restAppearance = locked
+        coEvery { repository.getEntityAppearance(entityId) } coAnswers { Result.success(restAppearance) }
+
+        viewModel.initializeConnection(context)
+        runCurrent()
+        assertEquals(LockState.Locked, viewModel.uiState.value.lockStates[entityId])
+        restAppearance = unlocked
+        dropConnection.complete(Unit)
+        runCurrent()
+        assertEquals(LockState.Locked, viewModel.uiState.value.lockStates[entityId])
+        advanceTimeBy(5_000)
+        runCurrent()
+        verify(exactly = 2) { repository.observeEntityAppearances(setOf(entityId)) }
+        assertEquals(LockState.Unlocked, viewModel.uiState.value.lockStates[entityId])
+
+        reconnect.emit(mapOf(entityId to locked))
+        assertEquals(LockState.Locked, viewModel.uiState.value.lockStates[entityId])
+        reconnect.emit(emptyMap())
+        assertEquals(LockState.Unknown, viewModel.uiState.value.lockStates[entityId])
+        viewModel.teardownConnection()
+    }
+
+    @Test
+    fun `a live lock update survives an older operation response`() = runTest {
+        val entityId = "lock.front"
+        val button = StreamButton("front", StreamButtonAction.DoorLock(entityId))
+        every { appPreferences.streamButtonLayoutFlow } returns flowOf(StreamButtonLayout(top = listOf(button)))
+        val snapshots = MutableSharedFlow<Map<String, HomeAssistantEntityAppearance>>(replay = 1)
+        snapshots.emit(mapOf(entityId to HomeAssistantEntityAppearance("unlocked")))
+        every { repository.observeEntityAppearances(setOf(entityId)) } returns snapshots
+        val finishOperation = CompletableDeferred<Unit>()
+        every { lockDoorUseCase(entityId) } returns flow {
+            emit(Result.success(LockState.Locking))
+            finishOperation.await()
+            emit(Result.failure(IOException("Lock request failed")))
+        }
+
+        viewModel.initializeConnection(context)
+        viewModel.handleStreamButton(button)
+        assertEquals(LockState.Locking, viewModel.uiState.value.lockStates[entityId])
+
+        snapshots.emit(mapOf(entityId to HomeAssistantEntityAppearance("locked")))
+        finishOperation.complete(Unit)
+        runCurrent()
+
+        assertEquals(LockState.Locked, viewModel.uiState.value.lockStates[entityId])
+        viewModel.teardownConnection()
     }
 
     @Test

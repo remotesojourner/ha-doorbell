@@ -21,6 +21,7 @@
     <string name="stream_button_action_summary">%1$s · %2$s</string>
     <string name="stream_button_icon">Icon</string>
     <string name="stream_button_state_entity">State entity (optional)</string>
+    <string name="stream_button_state_summary">%1$s · %2$s</string>
     <string name="stream_button_choose_state_entity">Choose a state entity</string>
     <string name="stream_button_follow_action">Follow action target</string>
     <string name="stream_button_use_action_target">Use action target</string>

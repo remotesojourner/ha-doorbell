@@ -22,11 +22,13 @@ import com.novasoftware.hadoorbell.domain.model.Settings
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
+import com.novasoftware.hadoorbell.domain.repository.HomeAssistantRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -48,6 +50,9 @@ class SettingsScreenTest {
     private val saveHomeAssistantConnection = mockk<SaveHomeAssistantConnectionUseCase>(relaxed = true)
     private val getHomeAssistantServices = mockk<GetHomeAssistantServicesUseCase>()
     private val getHomeAssistantEntities = mockk<GetHomeAssistantEntitiesUseCase>()
+    private val homeAssistantRepository = mockk<HomeAssistantRepository> {
+        every { observeEntityAppearances(any()) } returns emptyFlow()
+    }
 
     @Before
     fun setup() {
@@ -66,7 +71,8 @@ class SettingsScreenTest {
             saveSettingsUseCase,
             getHomeAssistantEntities,
             getHomeAssistantServices,
-            saveHomeAssistantConnection
+            saveHomeAssistantConnection,
+            homeAssistantRepository
         )
     }
 

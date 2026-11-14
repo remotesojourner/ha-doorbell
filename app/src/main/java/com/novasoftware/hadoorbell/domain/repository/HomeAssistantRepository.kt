@@ -4,12 +4,14 @@ import com.google.gson.JsonObject
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
+import kotlinx.coroutines.flow.Flow
 
 interface HomeAssistantRepository {
     suspend fun getEntities(url: String, token: String): Result<List<HomeAssistantEntity>>
     suspend fun getServices(url: String, token: String): Result<List<HomeAssistantService>>
     suspend fun getEntityState(entityId: String): Result<String>
     suspend fun getEntityAppearance(entityId: String): Result<HomeAssistantEntityAppearance>
+    fun observeEntityAppearances(entityIds: Set<String>): Flow<Map<String, HomeAssistantEntityAppearance>>
     suspend fun callService(domain: String, service: String, entityId: String?): Result<Unit>
     suspend fun callService(
         domain: String,

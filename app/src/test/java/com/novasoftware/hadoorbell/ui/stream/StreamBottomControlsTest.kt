@@ -3,6 +3,7 @@ package com.novasoftware.hadoorbell.ui.stream
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -102,6 +103,40 @@ class StreamBottomControlsTest {
         composeTestRule.onNodeWithContentDescription(button.displayName)
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "off"))
         composeTestRule.onNodeWithText("off", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a script with a fixed icon still shows the selected lock status`() {
+        val button = StreamButton(
+            "script",
+            StreamButtonAction.RunScript("script.front_door"),
+            stateEntityId = "lock.front_door",
+            icon = "mdi:key"
+        )
+        val layout = StreamButtonLayout(bottom = listOf(button))
+        val appearance = mutableStateOf(HomeAssistantEntityAppearance("locked"))
+        composeTestRule.setContent {
+            MaterialTheme {
+                Box(Modifier.width(400.dp)) {
+                    StreamBottomControls(
+                        uiState = StreamUiState(
+                            streamButtonLayout = layout,
+                            entityAppearances = mapOf(button.iconEntityId to appearance.value),
+                            isStreamButtonLayoutReady = true
+                        ),
+                        pulseScale = 1f,
+                        onSoundClick = {},
+                        onCallClick = {},
+                        onButtonClick = {}
+                    )
+                }
+            }
+        }
+
+        val control = composeTestRule.onNodeWithContentDescription(button.displayName)
+        control.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Locked"))
+        composeTestRule.runOnIdle { appearance.value = HomeAssistantEntityAppearance("unlocked") }
+        control.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unlocked"))
     }
 
     private fun showControls(
