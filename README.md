@@ -58,6 +58,8 @@ Stream buttons display icons. Pick a Material Design Icon for any editable butto
 
 Choose a **State entity** to have the Automatic icon follow a different entity. For example, a button can run a script while showing whether the front door is locked. Leave the field empty to follow the action's target.
 
+Automatic lock icons show the lock's current state. A manually chosen icon stays fixed while the button background reflects the lock state.
+
 ## Development
 
 This project leverages the following major external libraries:

@@ -100,16 +100,19 @@ internal fun resolveStreamButtonIcon(
     val icons = remember(context) { MaterialDesignIcons.glyphs(context) }
     selectedIcon?.iconName()?.takeIf(icons::containsKey)?.let { return it }
 
-    val usesDedicatedLockIcon = action is StreamButtonAction.DoorLock && entityId == action.entityId
-    if (!usesDedicatedLockIcon && (entityAppearance?.state == "unavailable" || entityAppearance?.state == "unknown")) {
+    if (action is StreamButtonAction.DoorLock && entityId == action.entityId) return null
+    if (entityAppearance?.state == "unavailable" || entityAppearance?.state == "unknown") {
         return "help-circle-outline"
+    }
+    if (entityAppearance != null && entityId.startsWith("lock.")) {
+        return defaultHomeAssistantIcon(entityId, entityAppearance)?.takeIf(icons::containsKey)
     }
 
     val entityIcon = if (entityAppearance != null) entityAppearance.icon else cachedEntityIcon
     entityIcon?.iconName()?.takeIf(icons::containsKey)?.let { return it }
 
     val hasActionIcon = when (action) {
-        is StreamButtonAction.DoorLock, is StreamButtonAction.QuickReply -> true
+        is StreamButtonAction.QuickReply -> true
         is StreamButtonAction.CallService -> action.doorRelease
         else -> false
     }

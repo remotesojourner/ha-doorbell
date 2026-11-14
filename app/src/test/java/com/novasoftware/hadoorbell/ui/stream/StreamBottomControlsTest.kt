@@ -106,11 +106,10 @@ class StreamBottomControlsTest {
     }
 
     @Test
-    fun `a script with a fixed icon still shows the selected lock status`() {
+    fun `a direct lock service with a fixed icon still shows its target lock status`() {
         val button = StreamButton(
-            "script",
-            StreamButtonAction.RunScript("script.front_door"),
-            stateEntityId = "lock.front_door",
+            "lock",
+            StreamButtonAction.CallService("lock", "lock", "lock.front_door"),
             icon = "mdi:key"
         )
         val layout = StreamButtonLayout(bottom = listOf(button))

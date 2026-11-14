@@ -130,7 +130,7 @@ class StreamViewModel @Inject constructor(
         val lockIds = buttons.mapNotNull { (it.action as? StreamButtonAction.DoorLock)?.entityId }
             .filter(String::isNotBlank).toSet()
         val entityIds = (buttons
-            .filter { it.icon.isNullOrBlank() || !it.stateEntityId.isNullOrBlank() }
+            .filter { it.icon.isNullOrBlank() || !it.stateEntityId.isNullOrBlank() || it.iconEntityId.startsWith("lock.") }
             .map(StreamButton::iconEntityId)
             .filter(String::isNotBlank).toSet() + lockIds)
         if (entityIds.isEmpty()) return
@@ -141,23 +141,35 @@ class StreamViewModel @Inject constructor(
         appearanceObserverJob = viewModelScope.launch {
             var retryDelay = APPEARANCE_RETRY_INITIAL_MS
             while (true) {
+                var previousSnapshot: Map<String, HomeAssistantEntityAppearance>? = null
                 try {
                     repository.observeEntityAppearances(entityIds).collect { snapshot ->
                         ensureActive()
-                        val firstSnapshot = !hasLiveAppearances
+                        val previous = previousSnapshot
+                        previousSnapshot = snapshot
                         hasLiveAppearances = true
                         retryDelay = APPEARANCE_RETRY_INITIAL_MS
-                        appearanceRefreshJob?.cancel()
-                        val appearances = entityIds.associateWith { snapshot[it] ?: UNAVAILABLE_APPEARANCE }
+                        if (previous == null) appearanceRefreshJob?.cancel()
+                        val changes = entityIds.filter { previous == null || snapshot[it] != previous[it] }
+                            .associateWith { snapshot[it] ?: UNAVAILABLE_APPEARANCE }
                         _uiState.update { state ->
-                            val lockUpdates = lockIds
-                                .filter {
-                                    appearances[it]?.state != state.entityAppearances[it]?.state ||
-                                        firstSnapshot && it !in state.runningLockEntityIds
+                            val appearances = changes.mapValues { (entityId, appearance) ->
+                                // An attribute-only event can still carry the state from before a confirmed REST update.
+                                val current = state.entityAppearances[entityId]
+                                if (current != null && appearance.state == previous?.get(entityId)?.state) {
+                                    appearance.copy(state = current.state)
+                                } else {
+                                    appearance
                                 }
-                                .associateWith { LockState.fromString(appearances[it]?.state) }
+                            }
+                            val lockUpdates = changes.keys.intersect(lockIds)
+                                .filter {
+                                    changes[it]?.state != (previous ?: state.entityAppearances)[it]?.state ||
+                                        previous == null && it !in state.runningLockEntityIds
+                                }
+                                .associateWith { LockState.fromString(changes[it]?.state) }
                             state.copy(
-                                entityAppearances = appearances,
+                                entityAppearances = state.entityAppearances + appearances,
                                 lockStates = state.lockStates + lockUpdates
                             )
                         }
@@ -183,22 +195,33 @@ class StreamViewModel @Inject constructor(
         hasLiveAppearances = false
     }
 
-    private fun refreshButtonAppearances(afterAction: Boolean = false, completedLockId: String? = null) {
+    private fun refreshButtonAppearances(
+        afterAction: Boolean = false,
+        completedLockId: String? = null,
+        serviceLockId: String? = null
+    ) {
         val currentState = _uiState.value
-        val entityIds = observedEntityIds
+        val entityIds = if (hasLiveAppearances) {
+            observedEntityIds.filter { it == serviceLockId && it.startsWith("lock.") }
+        } else {
+            observedEntityIds.filterNot { it == completedLockId }
+        }
         val lockIds = observedLockIds
-        if (!isScreenActive || hasLiveAppearances || entityIds.isEmpty()) return
+        if (!isScreenActive || entityIds.isEmpty()) return
 
         appearanceRefreshJob?.cancel()
         appearanceRefreshJob = viewModelScope.launch {
             suspend fun refresh() = coroutineScope {
                 entityIds.forEach { entityId ->
                     launch {
+                        val before = _uiState.value.entityAppearances[entityId]
                         repository.getEntityAppearance(entityId).onSuccess { appearance ->
                             ensureActive()
                             _uiState.update { state ->
+                                if (hasLiveAppearances && state.entityAppearances[entityId] != before) {
+                                    return@update state
+                                }
                                 val lockStates = if (entityId in lockIds &&
-                                    entityId != completedLockId &&
                                     entityId !in currentState.runningLockEntityIds &&
                                     entityId !in state.runningLockEntityIds
                                 ) {
@@ -476,7 +499,9 @@ class StreamViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 executeStreamButtonUseCase(button.action)
-                    .onSuccess { refreshButtonAppearances(afterAction = true) }
+                    .onSuccess {
+                        refreshButtonAppearances(afterAction = true, serviceLockId = button.iconEntityId)
+                    }
                     .onFailure { showButtonFailure(button, it) }
             } finally {
                 _uiState.update { it.copy(runningStreamButtonIds = it.runningStreamButtonIds - button.id) }
@@ -536,18 +561,28 @@ class StreamViewModel @Inject constructor(
                 val updates = if (unlock) unlockDoorUseCase(entityId) else lockDoorUseCase(entityId)
                 updates.collect { result ->
                     val state = result.getOrDefault(LockState.Unknown)
+                    completed = result.isSuccess && state == expectedState
                     _uiState.update { uiState ->
                         val appearance = uiState.entityAppearances[entityId]
-                        val displayedState = if (hasLiveAppearances && appearance != null &&
-                            (appearance.state != initialEntityState || result.isFailure)
-                        ) {
-                            LockState.fromString(appearance.state)
+                        if (completed) {
+                            val confirmedState = if (unlock) "unlocked" else "locked"
+                            val confirmedAppearance = appearance?.copy(state = confirmedState)
+                                ?: HomeAssistantEntityAppearance(confirmedState)
+                            uiState.copy(
+                                lockStates = uiState.lockStates + (entityId to state),
+                                entityAppearances = uiState.entityAppearances + (entityId to confirmedAppearance)
+                            )
                         } else {
-                            state
+                            val displayedState = if (hasLiveAppearances && appearance != null &&
+                                (appearance.state != initialEntityState || result.isFailure)
+                            ) {
+                                LockState.fromString(appearance.state)
+                            } else {
+                                state
+                            }
+                            uiState.copy(lockStates = uiState.lockStates + (entityId to displayedState))
                         }
-                        uiState.copy(lockStates = uiState.lockStates + (entityId to displayedState))
                     }
-                    completed = result.isSuccess && state == expectedState
                     result.onFailure { showButtonFailure(button, it) }
                 }
             } finally {

@@ -526,7 +526,7 @@ private fun StreamActionButton(
     val isLock = button.action is StreamButtonAction.DoorLock
     val fallbackIcon = streamButtonFallbackIcon(button.action, lockState)
     val usesStateEntity = !button.stateEntityId.isNullOrBlank()
-    val stateEntityLockState = if (usesStateEntity && button.iconEntityId.startsWith("lock.")) {
+    val stateEntityLockState = if (button.iconEntityId.startsWith("lock.")) {
         LockState.fromString(entityAppearance?.state)
     } else null
     val displayedLockState = if (isLock) lockState else stateEntityLockState

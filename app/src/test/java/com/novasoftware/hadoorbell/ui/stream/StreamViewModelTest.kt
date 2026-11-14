@@ -272,6 +272,80 @@ class StreamViewModelTest {
     }
 
     @Test
+    fun `confirmed lock completion updates every button while the subscription still reports locking`() = runTest {
+        val entityId = "lock.front"
+        val lampId = "light.porch"
+        val lock = StreamButton("front", StreamButtonAction.DoorLock(entityId))
+        val lamp = StreamButton("lamp", StreamButtonAction.CallService("light", "toggle", lampId))
+        val script = StreamButton("script", StreamButtonAction.RunScript("script.front"), stateEntityId = entityId)
+        every { appPreferences.streamButtonLayoutFlow } returns flowOf(
+            StreamButtonLayout(top = listOf(lock, lamp, script))
+        )
+        val unlocked = HomeAssistantEntityAppearance("unlocked")
+        val locking = HomeAssistantEntityAppearance("locking")
+        val locked = HomeAssistantEntityAppearance("locked")
+        val lampOff = HomeAssistantEntityAppearance("off")
+        val lampOn = HomeAssistantEntityAppearance("on")
+        val snapshots = MutableSharedFlow<Map<String, HomeAssistantEntityAppearance>>(replay = 1)
+        snapshots.emit(mapOf(entityId to unlocked, lampId to lampOff))
+        every { repository.observeEntityAppearances(setOf(entityId, lampId)) } returns snapshots
+        val finishOperation = CompletableDeferred<Unit>()
+        every { lockDoorUseCase(entityId) } returns flow {
+            emit(Result.success(LockState.Locking))
+            finishOperation.await()
+            emit(Result.success(LockState.Locked))
+        }
+
+        viewModel.initializeConnection(context)
+        viewModel.handleStreamButton(lock)
+        snapshots.emit(mapOf(entityId to locking, lampId to lampOff))
+        finishOperation.complete(Unit)
+        runCurrent()
+
+        assertEquals(LockState.Locked, viewModel.uiState.value.lockStates[entityId])
+        assertEquals(locked, viewModel.uiState.value.entityAppearances[script.iconEntityId])
+        snapshots.emit(mapOf(entityId to locking, lampId to lampOn))
+        assertEquals(lampOn, viewModel.uiState.value.entityAppearances[lampId])
+        assertEquals(locked, viewModel.uiState.value.entityAppearances[entityId])
+
+        val changedIcon = locking.copy(icon = "mdi:lock-open")
+        snapshots.emit(mapOf(entityId to changedIcon, lampId to lampOn))
+        assertEquals(locked.copy(icon = changedIcon.icon), viewModel.uiState.value.entityAppearances[entityId])
+        assertEquals(LockState.Locked, viewModel.uiState.value.lockStates[entityId])
+
+        snapshots.emit(mapOf(entityId to locked, lampId to lampOn))
+        snapshots.emit(mapOf(entityId to unlocked, lampId to lampOn))
+        assertEquals(LockState.Unlocked, viewModel.uiState.value.lockStates[entityId])
+        assertEquals(unlocked, viewModel.uiState.value.entityAppearances[entityId])
+        viewModel.teardownConnection()
+    }
+
+    @Test
+    fun `a script can refresh its lock when the subscription has not delivered the new state`() = runTest {
+        val entityId = "lock.front"
+        val script = StreamButton("script", StreamButtonAction.RunScript("script.front"), stateEntityId = entityId)
+        every { appPreferences.streamButtonLayoutFlow } returns flowOf(StreamButtonLayout(top = listOf(script)))
+        val unlocked = HomeAssistantEntityAppearance("unlocked")
+        val locked = HomeAssistantEntityAppearance("locked")
+        every { repository.observeEntityAppearances(setOf(entityId)) } returns flow {
+            emit(mapOf(entityId to unlocked))
+            awaitCancellation()
+        }
+        var current = unlocked
+        coEvery { repository.getEntityAppearance(entityId) } coAnswers { Result.success(current) }
+
+        viewModel.initializeConnection(context)
+        assertEquals(unlocked, viewModel.uiState.value.entityAppearances[entityId])
+        viewModel.handleStreamButton(script)
+        runCurrent()
+        current = locked
+        advanceUntilIdle()
+
+        assertEquals(locked, viewModel.uiState.value.entityAppearances[entityId])
+        viewModel.teardownConnection()
+    }
+
+    @Test
     fun `successful actions refresh the icons of affected buttons after their state changes`() = runTest {
         val lamp = StreamButton("lamp", StreamButtonAction.CallService("light", "toggle", "light.porch"))
         val script = StreamButton("script", StreamButtonAction.RunScript("script.welcome"))
