@@ -3,6 +3,7 @@ package com.novasoftware.hadoorbell.ui.settings
 import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -55,7 +57,6 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.core.utils.BiometricPromptHelper
-import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -358,6 +359,7 @@ fun SettingsScreen(
         CallSettingsDialog(
             state = uiState,
             entityLoadError = entityLoadError,
+            serviceLoadError = serviceLoadError,
             viewModel = viewModel,
             onDismiss = { showCallSettings = false }
         )
@@ -380,6 +382,7 @@ private fun homeAssistantErrorMessage(error: HomeAssistantLoadError?, requestFai
 private fun CallSettingsDialog(
     state: SettingsUiState,
     entityLoadError: String?,
+    serviceLoadError: String?,
     viewModel: SettingsViewModel,
     onDismiss: () -> Unit
 ) {
@@ -388,15 +391,82 @@ private fun CallSettingsDialog(
     var hangupService by rememberSaveable { mutableStateOf(state.hangupActionService) }
     var hangupEntity by rememberSaveable { mutableStateOf(state.hangupActionEntityId) }
     var instantAudio by rememberSaveable { mutableStateOf(state.instantTwoWayAudio) }
+    var picker by rememberSaveable { mutableStateOf<CallPicker?>(null) }
     val instantAudioAvailable = !state.streamButtonLayout.hasQuickReply
     val instantAudioLabel = stringResource(R.string.settings_instant_2way)
+
+    picker?.let { activePicker ->
+        val isAnswer = activePicker == CallPicker.ANSWER_SERVICE || activePicker == CallPicker.ANSWER_ENTITY
+        val service = if (isAnswer) answerService else hangupService
+        val entityId = if (isAnswer) answerEntity else hangupEntity
+        val dismissPicker = { picker = null }
+        if (activePicker == CallPicker.ANSWER_SERVICE || activePicker == CallPicker.HANGUP_SERVICE) {
+            HomeAssistantServicePicker(
+                services = state.services,
+                isLoading = state.isLoadingServices,
+                loadError = serviceLoadError,
+                onRetry = viewModel::loadServices,
+                onDismiss = dismissPicker,
+                serviceId = service,
+                onSelect = { selected ->
+                    val descriptor = state.services.find { serviceId(it) == selected }
+                    val domains = serviceTargetDomains(selected, descriptor)
+                    val compatibleEntity = entityId.takeIf {
+                        domains.isEmpty() || it.substringBefore('.') in domains
+                    }.orEmpty()
+                    if (isAnswer) {
+                        answerService = selected
+                        answerEntity = compatibleEntity
+                    } else {
+                        hangupService = selected
+                        hangupEntity = compatibleEntity
+                    }
+                    dismissPicker()
+                }
+            )
+        } else {
+            val descriptor = state.services.find { serviceId(it) == service }
+            val domains = serviceTargetDomains(service, descriptor)
+            HomeAssistantEntityPicker(
+                entities = filterEntitiesByDomain(state.entities, domains),
+                isLoading = state.isLoadingEntities,
+                loadError = entityLoadError,
+                onRetry = viewModel::loadEntities,
+                onDismiss = dismissPicker,
+                selectedEntityId = entityId,
+                onSelect = { selected ->
+                    if (isAnswer) answerEntity = selected.entityId else hangupEntity = selected.entityId
+                    dismissPicker()
+                }
+            )
+        }
+        return
+    }
+
+    val servicePlaceholder = stringResource(R.string.stream_button_choose_service)
+    val entityPlaceholder = stringResource(R.string.stream_button_choose_entity)
+    val dialogScroll = rememberScrollState()
+    fun serviceName(id: String): String =
+        state.services.find { serviceId(it) == id }?.name?.takeIf(String::isNotBlank) ?: id.ifBlank { servicePlaceholder }
+    fun entityName(id: String): String =
+        state.entities.find { it.entityId == id }?.name ?: id.ifBlank { entityPlaceholder }
+    fun openPicker(next: CallPicker) {
+        when (next) {
+            CallPicker.ANSWER_SERVICE, CallPicker.HANGUP_SERVICE -> viewModel.loadServices()
+            CallPicker.ANSWER_ENTITY, CallPicker.HANGUP_ENTITY -> {
+                if (state.services.isEmpty()) viewModel.loadServices()
+                viewModel.loadEntities()
+            }
+        }
+        picker = next
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.settings_call_actions)) },
         text = {
             Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
+                modifier = Modifier.verticalScroll(dialogScroll),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
@@ -425,43 +495,49 @@ private fun CallSettingsDialog(
                     stringResource(R.string.settings_call_actions_desc),
                     style = MaterialTheme.typography.bodySmall
                 )
-                OutlinedTextField(
-                    value = answerService,
-                    onValueChange = { answerService = it },
-                    label = { Text(stringResource(R.string.settings_answer_action)) },
-                    placeholder = { Text("switch.turn_on") },
-                    modifier = Modifier.fillMaxWidth().testTag("answer_action_service_input"),
-                    singleLine = true
+                CallPickerField(
+                    label = R.string.settings_answer_action,
+                    value = serviceName(answerService),
+                    tag = "answer_action_service_picker",
+                    onChoose = { openPicker(CallPicker.ANSWER_SERVICE) },
+                    clearLabel = R.string.settings_clear_answer_service,
+                    canClear = answerService.isNotBlank(),
+                    onClear = {
+                        answerService = ""
+                        answerEntity = ""
+                    }
                 )
-                EntityTargetField(
-                    value = answerEntity,
-                    onValueChange = { answerEntity = it },
-                    label = stringResource(R.string.settings_answer_entity),
-                    placeholder = "switch.doorbell_talk",
-                    entities = state.entities,
-                    isLoading = state.isLoadingEntities,
-                    loadError = entityLoadError,
-                    onLoad = viewModel::loadEntities,
-                    modifier = Modifier.testTag("answer_action_entity_input")
+                CallPickerField(
+                    label = R.string.settings_answer_entity,
+                    value = entityName(answerEntity),
+                    tag = "answer_action_entity_picker",
+                    enabled = answerService.isNotBlank(),
+                    onChoose = { openPicker(CallPicker.ANSWER_ENTITY) },
+                    clearLabel = R.string.settings_clear_answer_target,
+                    canClear = answerEntity.isNotBlank(),
+                    onClear = { answerEntity = "" }
                 )
-                OutlinedTextField(
-                    value = hangupService,
-                    onValueChange = { hangupService = it },
-                    label = { Text(stringResource(R.string.settings_hangup_action)) },
-                    placeholder = { Text("switch.turn_off") },
-                    modifier = Modifier.fillMaxWidth().testTag("hangup_action_service_input"),
-                    singleLine = true
+                CallPickerField(
+                    label = R.string.settings_hangup_action,
+                    value = serviceName(hangupService),
+                    tag = "hangup_action_service_picker",
+                    onChoose = { openPicker(CallPicker.HANGUP_SERVICE) },
+                    clearLabel = R.string.settings_clear_hangup_service,
+                    canClear = hangupService.isNotBlank(),
+                    onClear = {
+                        hangupService = ""
+                        hangupEntity = ""
+                    }
                 )
-                EntityTargetField(
-                    value = hangupEntity,
-                    onValueChange = { hangupEntity = it },
-                    label = stringResource(R.string.settings_hangup_entity),
-                    placeholder = "switch.doorbell_talk",
-                    entities = state.entities,
-                    isLoading = state.isLoadingEntities,
-                    loadError = entityLoadError,
-                    onLoad = viewModel::loadEntities,
-                    modifier = Modifier.testTag("hangup_action_entity_input")
+                CallPickerField(
+                    label = R.string.settings_hangup_entity,
+                    value = entityName(hangupEntity),
+                    tag = "hangup_action_entity_picker",
+                    enabled = hangupService.isNotBlank(),
+                    onChoose = { openPicker(CallPicker.HANGUP_ENTITY) },
+                    clearLabel = R.string.settings_clear_hangup_target,
+                    canClear = hangupEntity.isNotBlank(),
+                    onClear = { hangupEntity = "" }
                 )
             }
         },
@@ -481,51 +557,31 @@ private fun CallSettingsDialog(
 }
 
 @Composable
-private fun EntityTargetField(
+private fun CallPickerField(
+    @StringRes label: Int,
     value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    placeholder: String,
-    entities: List<HomeAssistantEntity>,
-    isLoading: Boolean,
-    loadError: String?,
-    onLoad: () -> Unit,
-    modifier: Modifier = Modifier
+    tag: String,
+    onChoose: () -> Unit,
+    @StringRes clearLabel: Int,
+    canClear: Boolean,
+    onClear: () -> Unit,
+    enabled: Boolean = true
 ) {
-    var showPicker by remember { mutableStateOf(false) }
-    val browseLabel = stringResource(R.string.settings_browse_entity_target, label)
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        placeholder = { Text(placeholder) },
-        trailingIcon = {
-            TextButton(
-                modifier = Modifier.semantics { contentDescription = browseLabel },
-                onClick = {
-                    showPicker = true
-                    onLoad()
-                }
-            ) {
-                Text(stringResource(R.string.settings_browse_entities))
-            }
-        },
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        singleLine = true
-    )
-    if (showPicker) {
-        HomeAssistantEntityPicker(
-            entities = entities,
-            isLoading = isLoading,
-            loadError = loadError,
-            onRetry = onLoad,
-            onDismiss = { showPicker = false },
-            onSelect = {
-                onValueChange(it.entityId)
-                showPicker = false
-            },
-            selectedEntityId = value
+    Row(verticalAlignment = Alignment.Bottom) {
+        EditorPickerButton(
+            label = stringResource(label),
+            value = value,
+            enabled = enabled,
+            modifier = Modifier.weight(1f),
+            buttonModifier = Modifier.testTag(tag),
+            onClick = onChoose
         )
+        if (canClear) {
+            IconButton(onClick = onClear) {
+                Icon(Icons.Default.Clear, contentDescription = stringResource(clearLabel))
+            }
+        }
     }
 }
+
+private enum class CallPicker { ANSWER_SERVICE, ANSWER_ENTITY, HANGUP_SERVICE, HANGUP_ENTITY }

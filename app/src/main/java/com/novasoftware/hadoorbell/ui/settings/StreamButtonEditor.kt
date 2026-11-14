@@ -509,7 +509,7 @@ private fun EditStreamButtonDialog(
     when (picker) {
         EditorPicker.ENTITY -> {
             HomeAssistantEntityPicker(
-                entities = entities.filter { targetDomains.isEmpty() || it.domain in targetDomains },
+                entities = filterEntitiesByDomain(entities, targetDomains),
                 isLoading = isLoadingEntities,
                 loadError = entityLoadError,
                 onRetry = onLoadEntities,
@@ -814,17 +814,24 @@ private fun EditStreamButtonDialog(
 }
 
 @Composable
-private fun EditorPickerButton(label: String, value: String, onClick: () -> Unit) {
-    Column {
+internal fun EditorPickerButton(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    buttonModifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Column(modifier = modifier) {
         Text(label, style = MaterialTheme.typography.labelMedium)
-        OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = onClick, modifier = buttonModifier.fillMaxWidth(), enabled = enabled) {
             Text(value, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
-private fun HomeAssistantServicePicker(
+internal fun HomeAssistantServicePicker(
     services: List<HomeAssistantService>,
     isLoading: Boolean,
     loadError: String?,
@@ -1205,7 +1212,7 @@ private enum class ButtonRow(
 private fun List<StreamButton>.move(from: Int, to: Int): List<StreamButton> =
     toMutableList().apply { add(to, removeAt(from)) }
 
-private fun serviceId(service: HomeAssistantService): String = "${service.domain}.${service.service}"
+internal fun serviceId(service: HomeAssistantService): String = "${service.domain}.${service.service}"
 private fun serviceId(service: StreamButtonAction.CallService): String = "${service.domain}.${service.service}"
 
 private fun isServiceId(value: String): Boolean =
@@ -1215,7 +1222,7 @@ private fun isServiceId(value: String): Boolean =
 private fun isSelectOptionService(value: String): Boolean =
     value == "select.select_option" || value == "input_select.select_option"
 
-private fun serviceTargetDomains(id: String, descriptor: HomeAssistantService?): Set<String> {
+internal fun serviceTargetDomains(id: String, descriptor: HomeAssistantService?): Set<String> {
     if (isSelectOptionService(id)) return setOf(id.substringBefore('.'))
     val filters = descriptor?.target?.get("entity") ?: return emptySet()
     val entries = if (filters.isJsonArray) filters.asJsonArray.toList() else listOf(filters)
@@ -1228,6 +1235,11 @@ private fun serviceTargetDomains(id: String, descriptor: HomeAssistantService?):
     }
     return domains
 }
+
+internal fun filterEntitiesByDomain(
+    entities: List<HomeAssistantEntity>,
+    domains: Set<String>
+): List<HomeAssistantEntity> = if (domains.isEmpty()) entities else entities.filter { it.domain in domains }
 
 private fun parseJsonObject(value: String): JsonObject? {
     if (value.isBlank()) return JsonObject()

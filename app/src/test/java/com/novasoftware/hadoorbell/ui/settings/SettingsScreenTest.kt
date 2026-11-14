@@ -5,6 +5,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -13,6 +15,9 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.google.gson.JsonObject
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantEntitiesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantServicesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSettingsUseCase
@@ -30,6 +35,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -59,11 +65,14 @@ class SettingsScreenTest {
         coEvery { getHomeAssistantEntities(any(), any()) } returns Result.success(emptyList())
     }
 
-    private fun viewModel(hasSavedConnection: Boolean = true): SettingsViewModel {
+    private fun viewModel(
+        hasSavedConnection: Boolean = true,
+        settings: Settings = Settings()
+    ): SettingsViewModel {
         val initialSettings = if (hasSavedConnection) {
-            Settings(url = "https://test.local:8123", token = "my-token-123")
+            settings.copy(url = "https://test.local:8123", token = "my-token-123")
         } else {
-            Settings()
+            settings
         }
         every { getSettingsUseCase() } returns flowOf(initialSettings)
         return SettingsViewModel(
@@ -183,6 +192,10 @@ class SettingsScreenTest {
         composeTestRule.onNodeWithTag("instant_2way_switch", useUnmergedTree = true)
             .performScrollTo()
             .assertIsNotEnabled()
+        composeTestRule.onNodeWithText(
+            "A Quick Reply button is enabled, so instant two-way audio is disabled. " +
+                "The stream starts in listen-only mode so replies can play."
+        ).performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -238,6 +251,76 @@ class SettingsScreenTest {
         composeTestRule.onNodeWithText("Call Button").assertIsDisplayed()
         composeTestRule.onNodeWithText("Answer Service").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Hang Up Service").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `answer and hang up use independent service and entity selections`() {
+        val entities = listOf(
+            HomeAssistantEntity("switch.porch", "Porch intercom"),
+            HomeAssistantEntity("switch.side", "Side intercom"),
+            HomeAssistantEntity("script.end_call", "Finish the call")
+        )
+        coEvery { getHomeAssistantEntities(any(), any()) } returns Result.success(entities)
+        coEvery { getHomeAssistantServices(any(), any()) } returns Result.success(
+            listOf(
+                HomeAssistantService("switch", "toggle", "Toggle switch", target = entityTarget("switch")),
+                HomeAssistantService("script", "turn_on", "Run script", target = entityTarget("script"))
+            )
+        )
+        val viewModel = viewModel(settings = Settings(
+            answerActionService = "switch.turn_on",
+            answerActionEntityId = "switch.porch"
+        ))
+        composeTestRule.setContent {
+            androidx.compose.material3.MaterialTheme {
+                SettingsScreen(viewModel = viewModel, onSave = {}, onCancel = {}, canCancel = false)
+            }
+        }
+        val answerService = composeTestRule.onNodeWithTag("answer_action_service_picker")
+        val answerEntity = composeTestRule.onNodeWithTag("answer_action_entity_picker")
+        val hangUpService = composeTestRule.onNodeWithTag("hangup_action_service_picker")
+        val hangUpEntity = composeTestRule.onNodeWithTag("hangup_action_entity_picker")
+
+        composeTestRule.onNodeWithText("Call").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        composeTestRule.onNodeWithText("Call Button").assertIsDisplayed()
+        answerService.performScrollTo().assertTextContains("switch.turn_on").performClick()
+        composeTestRule.onNodeWithText("Search by name or domain.service").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Toggle switch").performClick()
+        answerEntity.performScrollTo().assertTextContains("Porch intercom").performClick()
+        composeTestRule.onNodeWithText("Choose a Home Assistant entity").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Finish the call").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Side intercom").performClick()
+
+        hangUpService.performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Run script").performClick()
+        hangUpEntity.performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Side intercom").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Finish the call").performClick()
+        composeTestRule.runOnIdle { assertFalse(viewModel.callActionsChanged()) }
+        composeTestRule.onNodeWithText("Done").performClick()
+        composeTestRule.runOnIdle {
+            val state = viewModel.uiState.value
+            assertEquals("switch.toggle", state.answerActionService)
+            assertEquals("switch.side", state.answerActionEntityId)
+            assertEquals("script.turn_on", state.hangupActionService)
+            assertEquals("script.end_call", state.hangupActionEntityId)
+        }
+
+        composeTestRule.onNodeWithText("Call").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        composeTestRule.onNodeWithContentDescription("Clear Answer target").performScrollTo().performClick()
+        composeTestRule.onNodeWithContentDescription("Clear Hang Up service").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Done").performClick()
+        composeTestRule.runOnIdle {
+            val state = viewModel.uiState.value
+            assertEquals("switch.toggle", state.answerActionService)
+            assertEquals("", state.answerActionEntityId)
+            assertEquals("", state.hangupActionService)
+            assertEquals("", state.hangupActionEntityId)
+        }
+    }
+
+    private fun entityTarget(domain: String) = JsonObject().apply {
+        add("entity", JsonObject().apply { addProperty("domain", domain) })
     }
 
     @Test

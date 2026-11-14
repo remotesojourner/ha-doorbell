@@ -52,7 +52,7 @@ Choose **Call a service** to browse Home Assistant services, pick a target when 
 
 **Quick reply menu** opens the full reply list from the stream. The stream starts in listen-only mode with this button enabled so replies can play. Existing buttons keep their configured actions when you update. Choose **Lock or unlock** in the **Action** dropdown to operate a lock based on its current state and show that state on the stream. Migrated door and lock buttons prompt for authentication when the device has a secure screen lock. On devices without a screen lock or enrolled biometrics, those controls run directly.
 
-Tap **Call** in the list to set optional Answer and Hang Up services or start two-way audio immediately.
+Tap **Call** in the list to choose optional Answer and Hang Up services and their target entities. If a Quick Reply button is enabled, **Connect in 2-way mode instantly** is disabled so replies can play in listen-only mode.
 
 Stream buttons display icons. Pick a Material Design Icon for any editable button, or leave it on **Automatic** to follow its Home Assistant entity. While the stream is open, the app listens for entity changes, including those made outside the app. When the entity has no explicit icon, built-in icons can reflect states such as a light being off or a cover being open.
 
