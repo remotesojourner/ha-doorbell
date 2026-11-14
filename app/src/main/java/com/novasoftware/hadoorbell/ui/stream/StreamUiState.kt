@@ -1,6 +1,7 @@
 package com.novasoftware.hadoorbell.ui.stream
 
 import com.novasoftware.hadoorbell.core.webrtc.WebRtcManager
+import com.novasoftware.hadoorbell.domain.model.CallActions
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import com.novasoftware.hadoorbell.domain.model.LockState
 import com.novasoftware.hadoorbell.domain.model.StreamButton
@@ -16,10 +17,7 @@ data class StreamUiState(
     val isStreamMuted: Boolean = false,
     val isSwitchingModes: Boolean = false,
     val quickReplySheet: QuickReplySheetState? = null,
-    val answerActionService: String = "",
-    val answerActionEntityId: String = "",
-    val hangupActionService: String = "",
-    val hangupActionEntityId: String = "",
+    val callActions: CallActions = CallActions(),
     val streamButtonLayout: StreamButtonLayout = StreamButtonLayout(),
     val isStreamButtonLayoutReady: Boolean = false,
     val runningStreamButtonIds: Set<String> = emptySet(),

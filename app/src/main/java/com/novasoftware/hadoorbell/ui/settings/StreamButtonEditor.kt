@@ -47,12 +47,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
@@ -61,10 +63,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.gson.JsonObject
-import com.google.gson.JsonParser
-import com.google.gson.Strictness
-import com.google.gson.stream.JsonReader
-import com.google.gson.stream.JsonToken
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
@@ -81,7 +79,6 @@ import com.novasoftware.hadoorbell.ui.icons.resolveStreamButtonIcon
 import com.novasoftware.hadoorbell.ui.icons.streamButtonFallbackIcon
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
-import java.io.StringReader
 import java.util.UUID
 
 @Composable
@@ -412,6 +409,9 @@ private fun EditStreamButtonDialog(
     var kind by rememberSaveable { mutableStateOf(ActionKind.from(savedAction)) }
     var entityId by rememberSaveable { mutableStateOf(savedAction?.entityId?.ifBlank { null }) }
     var stateEntityId by rememberSaveable { mutableStateOf(existing?.stateEntityId) }
+    var stateColors by rememberSaveable(stateSaver = StateColorsSaver) {
+        mutableStateOf(existing?.stateColors.orEmpty())
+    }
     var serviceId by rememberSaveable { mutableStateOf(savedService?.let(::serviceId).orEmpty()) }
     var eventType by rememberSaveable { mutableStateOf(savedEvent?.eventType.orEmpty()) }
     var skipConditions by rememberSaveable {
@@ -534,9 +534,21 @@ private fun EditStreamButtonDialog(
                 selectedEntityId = stateEntityId,
                 title = R.string.stream_button_choose_state_entity,
                 onSelect = { selected ->
+                    if (stateEntityId != selected.entityId) stateColors = emptyMap()
                     stateEntityId = selected.entityId
                     picker = null
                 }
+            )
+            return
+        }
+        EditorPicker.STATE_COLORS -> {
+            StateColorEditor(
+                entityId = stateEntityId.orEmpty(),
+                currentState = appearance?.state,
+                entityOptions = iconEntity?.options.orEmpty(),
+                stateColors = stateColors,
+                onChange = { stateColors = it },
+                onDismiss = { picker = null }
             )
             return
         }
@@ -692,36 +704,16 @@ private fun EditStreamButtonDialog(
                 }
 
                 if (hasJsonData) {
-                    OutlinedTextField(
+                    ServiceDataField(
                         value = jsonText,
                         onValueChange = { jsonText = it },
-                        label = {
-                            Text(stringResource(
-                                if (kind == ActionKind.RUN_SCRIPT) R.string.stream_button_script_variables
-                                else R.string.stream_button_action_data
-                            ))
-                        },
-                        supportingText = {
-                            Text(stringResource(
-                                if (data == null) R.string.stream_button_invalid_json
-                                else R.string.stream_button_json_object
-                            ))
-                        },
                         isError = data == null,
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 2,
-                        maxLines = 5
+                        label = if (kind == ActionKind.RUN_SCRIPT) R.string.stream_button_script_variables
+                            else R.string.stream_button_action_data,
+                        availableFields = if (isService) selectedService?.fields.orEmpty().keys.filterTo(mutableSetOf()) {
+                            it != "entity_id" && (!selectOption || it != "option")
+                        } else emptySet()
                     )
-                    if (isService) {
-                        selectedService?.fields.orEmpty().filterKeys { key ->
-                            key != "entity_id" && (!selectOption || key != "option")
-                        }.takeUnless { it.isEmpty() }?.let { fields ->
-                            Text(
-                                stringResource(R.string.stream_button_service_fields, fields.keys.sorted().joinToString()),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
                 }
 
                 EditorPickerButton(
@@ -741,9 +733,23 @@ private fun EditStreamButtonDialog(
                     )
                 }
                 if (stateEntityId != null) {
-                    TextButton(onClick = { stateEntityId = null }) {
+                    TextButton(onClick = {
+                        stateEntityId = null
+                        stateColors = emptyMap()
+                    }) {
                         Text(stringResource(R.string.stream_button_use_action_target))
                     }
+                    EditorPickerButton(
+                        label = stringResource(R.string.stream_button_state_colors_title),
+                        value = if (stateColors.isEmpty()) {
+                            stringResource(R.string.stream_button_state_colors_configure)
+                        } else {
+                            pluralStringResource(
+                                R.plurals.stream_button_state_colors_count, stateColors.size, stateColors.size
+                            )
+                        },
+                        onClick = { picker = EditorPicker.STATE_COLORS }
+                    )
                 }
 
                 Column {
@@ -801,7 +807,8 @@ private fun EditStreamButtonDialog(
                                 icon = icon,
                                 entityIcon = currentEntityIcon,
                                 entityName = currentEntityName,
-                                stateEntityId = stateEntityId
+                                stateEntityId = stateEntityId,
+                                stateColors = stateColors
                             )
                         )
                     }
@@ -1241,18 +1248,12 @@ internal fun filterEntitiesByDomain(
     domains: Set<String>
 ): List<HomeAssistantEntity> = if (domains.isEmpty()) entities else entities.filter { it.domain in domains }
 
-private fun parseJsonObject(value: String): JsonObject? {
-    if (value.isBlank()) return JsonObject()
-    return runCatching {
-        JsonReader(StringReader(value)).use { reader ->
-            reader.strictness = Strictness.STRICT
-            val parsed = JsonParser.parseReader(reader)
-            parsed.asJsonObject.takeIf { reader.peek() == JsonToken.END_DOCUMENT }
-        }
-    }.getOrNull()
-}
+private val StateColorsSaver = listSaver<Map<String, String>, String>(
+    save = { colors -> colors.entries.flatMap { (state, color) -> listOf(state, color) } },
+    restore = { values -> values.chunked(2).associate { (state, color) -> state to color } }
+)
 
-private enum class EditorPicker { ENTITY, STATE_ENTITY, ICON, SERVICE, OPTION }
+private enum class EditorPicker { ENTITY, STATE_ENTITY, STATE_COLORS, ICON, SERVICE, OPTION }
 
 private enum class ActionKind(@param:StringRes val label: Int, val domains: Set<String> = emptySet()) {
     CALL_SERVICE(R.string.stream_button_call_service),

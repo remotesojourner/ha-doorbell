@@ -57,6 +57,7 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.core.utils.BiometricPromptHelper
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -388,12 +389,15 @@ private fun CallSettingsDialog(
 ) {
     var answerService by rememberSaveable { mutableStateOf(state.answerActionService) }
     var answerEntity by rememberSaveable { mutableStateOf(state.answerActionEntityId) }
+    var answerJson by rememberSaveable { mutableStateOf(state.answerActionData.takeUnless { it.isEmpty }?.toString().orEmpty()) }
     var hangupService by rememberSaveable { mutableStateOf(state.hangupActionService) }
     var hangupEntity by rememberSaveable { mutableStateOf(state.hangupActionEntityId) }
+    var hangupJson by rememberSaveable { mutableStateOf(state.hangupActionData.takeUnless { it.isEmpty }?.toString().orEmpty()) }
     var instantAudio by rememberSaveable { mutableStateOf(state.instantTwoWayAudio) }
     var picker by rememberSaveable { mutableStateOf<CallPicker?>(null) }
     val instantAudioAvailable = !state.streamButtonLayout.hasQuickReply
     val instantAudioLabel = stringResource(R.string.settings_instant_2way)
+    fun serviceDescriptor(id: String): HomeAssistantService? = state.services.find { serviceId(it) == id }
 
     picker?.let { activePicker ->
         val isAnswer = activePicker == CallPicker.ANSWER_SERVICE || activePicker == CallPicker.ANSWER_ENTITY
@@ -409,15 +413,17 @@ private fun CallSettingsDialog(
                 onDismiss = dismissPicker,
                 serviceId = service,
                 onSelect = { selected ->
-                    val descriptor = state.services.find { serviceId(it) == selected }
+                    val descriptor = serviceDescriptor(selected)
                     val domains = serviceTargetDomains(selected, descriptor)
                     val compatibleEntity = entityId.takeIf {
                         domains.isEmpty() || it.substringBefore('.') in domains
                     }.orEmpty()
                     if (isAnswer) {
+                        if (answerService != selected) answerJson = ""
                         answerService = selected
                         answerEntity = compatibleEntity
                     } else {
+                        if (hangupService != selected) hangupJson = ""
                         hangupService = selected
                         hangupEntity = compatibleEntity
                     }
@@ -425,7 +431,7 @@ private fun CallSettingsDialog(
                 }
             )
         } else {
-            val descriptor = state.services.find { serviceId(it) == service }
+            val descriptor = serviceDescriptor(service)
             val domains = serviceTargetDomains(service, descriptor)
             HomeAssistantEntityPicker(
                 entities = filterEntitiesByDomain(state.entities, domains),
@@ -446,8 +452,12 @@ private fun CallSettingsDialog(
     val servicePlaceholder = stringResource(R.string.stream_button_choose_service)
     val entityPlaceholder = stringResource(R.string.stream_button_choose_entity)
     val dialogScroll = rememberScrollState()
+    val answerData = remember(answerJson) { parseJsonObject(answerJson) }
+    val hangupData = remember(hangupJson) { parseJsonObject(hangupJson) }
+    val answerDescriptor = serviceDescriptor(answerService)
+    val hangupDescriptor = serviceDescriptor(hangupService)
     fun serviceName(id: String): String =
-        state.services.find { serviceId(it) == id }?.name?.takeIf(String::isNotBlank) ?: id.ifBlank { servicePlaceholder }
+        serviceDescriptor(id)?.name?.takeIf(String::isNotBlank) ?: id.ifBlank { servicePlaceholder }
     fun entityName(id: String): String =
         state.entities.find { it.entityId == id }?.name ?: id.ifBlank { entityPlaceholder }
     fun openPicker(next: CallPicker) {
@@ -505,6 +515,7 @@ private fun CallSettingsDialog(
                     onClear = {
                         answerService = ""
                         answerEntity = ""
+                        answerJson = ""
                     }
                 )
                 CallPickerField(
@@ -517,6 +528,16 @@ private fun CallSettingsDialog(
                     canClear = answerEntity.isNotBlank(),
                     onClear = { answerEntity = "" }
                 )
+                if (answerService.isNotBlank()) {
+                    ServiceDataField(
+                        value = answerJson,
+                        onValueChange = { answerJson = it },
+                        isError = answerData == null,
+                        label = R.string.settings_answer_data,
+                        modifier = Modifier.testTag("answer_action_data"),
+                        availableFields = answerDescriptor?.fields.orEmpty().keys - "entity_id"
+                    )
+                }
                 CallPickerField(
                     label = R.string.settings_hangup_action,
                     value = serviceName(hangupService),
@@ -527,6 +548,7 @@ private fun CallSettingsDialog(
                     onClear = {
                         hangupService = ""
                         hangupEntity = ""
+                        hangupJson = ""
                     }
                 )
                 CallPickerField(
@@ -539,14 +561,47 @@ private fun CallSettingsDialog(
                     canClear = hangupEntity.isNotBlank(),
                     onClear = { hangupEntity = "" }
                 )
+                if (hangupService.isNotBlank()) {
+                    ServiceDataField(
+                        value = hangupJson,
+                        onValueChange = { hangupJson = it },
+                        isError = hangupData == null,
+                        label = R.string.settings_hangup_data,
+                        modifier = Modifier.testTag("hangup_action_data"),
+                        availableFields = hangupDescriptor?.fields.orEmpty().keys - "entity_id"
+                    )
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                viewModel.updateCallActions(answerService, answerEntity, hangupService, hangupEntity)
-                viewModel.updateInstantTwoWayAudio(instantAudio)
-                onDismiss()
-            }) {
+            TextButton(
+                enabled = answerData != null && hangupData != null,
+                onClick = {
+                    if (answerData == null || hangupData == null) return@TextButton
+                    viewModel.updateCallActions(
+                        answerService = answerService,
+                        answerEntity = answerEntity,
+                        hangupService = hangupService,
+                        hangupEntity = hangupEntity,
+                        answerData = answerData,
+                        hangupData = hangupData,
+                        answerNeedsResponse = callActionNeedsResponse(
+                            descriptor = answerDescriptor,
+                            isSavedService = answerService == state.answerActionService,
+                            isSavedData = answerData == state.answerActionData,
+                            savedNeedsResponse = state.answerActionNeedsResponse
+                        ),
+                        hangupNeedsResponse = callActionNeedsResponse(
+                            descriptor = hangupDescriptor,
+                            isSavedService = hangupService == state.hangupActionService,
+                            isSavedData = hangupData == state.hangupActionData,
+                            savedNeedsResponse = state.hangupActionNeedsResponse
+                        )
+                    )
+                    viewModel.updateInstantTwoWayAudio(instantAudio)
+                    onDismiss()
+                }
+            ) {
                 Text(stringResource(R.string.settings_call_done))
             }
         },
@@ -585,3 +640,14 @@ private fun CallPickerField(
 }
 
 private enum class CallPicker { ANSWER_SERVICE, ANSWER_ENTITY, HANGUP_SERVICE, HANGUP_ENTITY }
+
+private fun callActionNeedsResponse(
+    descriptor: HomeAssistantService?,
+    isSavedService: Boolean,
+    isSavedData: Boolean,
+    savedNeedsResponse: Boolean
+): Boolean = if (isSavedService && isSavedData) {
+    savedNeedsResponse
+} else {
+    descriptor?.needsResponse ?: (isSavedService && savedNeedsResponse)
+}

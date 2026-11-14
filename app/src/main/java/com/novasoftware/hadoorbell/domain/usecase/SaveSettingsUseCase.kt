@@ -1,5 +1,7 @@
 package com.novasoftware.hadoorbell.domain.usecase
 
+import com.novasoftware.hadoorbell.domain.model.CallActions
+import com.novasoftware.hadoorbell.domain.model.CallServiceSettings
 import com.novasoftware.hadoorbell.domain.model.Settings
 import com.novasoftware.hadoorbell.domain.repository.SettingsRepository
 import javax.inject.Inject
@@ -12,10 +14,20 @@ class SaveSettingsUseCase @Inject constructor(
             source = settings.streamSource,
             instantTwoWayAudio = settings.instantTwoWayAudio,
             provider = settings.webrtcProvider,
-            answerActionService = settings.answerActionService,
-            answerActionEntityId = settings.answerActionEntityId,
-            hangupActionService = settings.hangupActionService,
-            hangupActionEntityId = settings.hangupActionEntityId,
+            callActions = CallActions(
+                answer = CallServiceSettings(
+                    settings.answerActionService,
+                    settings.answerActionEntityId,
+                    settings.answerActionData,
+                    settings.answerActionNeedsResponse
+                ),
+                hangup = CallServiceSettings(
+                    settings.hangupActionService,
+                    settings.hangupActionEntityId,
+                    settings.hangupActionData,
+                    settings.hangupActionNeedsResponse
+                )
+            ),
             streamButtonLayout = settings.streamButtonLayout
         )
     }

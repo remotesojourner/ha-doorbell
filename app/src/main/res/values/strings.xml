@@ -19,8 +19,10 @@
     <string name="settings_call_actions_desc">Choose optional Home Assistant services to run when you answer or end a call.</string>
     <string name="settings_answer_action">Answer Service</string>
     <string name="settings_answer_entity">Answer Target Entity (optional)</string>
+    <string name="settings_answer_data">Answer service data (optional)</string>
     <string name="settings_hangup_action">Hang Up Service</string>
     <string name="settings_hangup_entity">Hang Up Target Entity (optional)</string>
+    <string name="settings_hangup_data">Hang Up service data (optional)</string>
     <string name="settings_call_done">Done</string>
     <string name="settings_clear_answer_service">Clear Answer service</string>
     <string name="settings_clear_answer_target">Clear Answer target</string>

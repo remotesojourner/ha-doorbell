@@ -2,6 +2,7 @@ package com.novasoftware.hadoorbell.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
 import com.google.gson.JsonParser
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
@@ -68,8 +69,12 @@ class SettingsViewModel @Inject constructor(
                     webrtcProvider = settings.webrtcProvider,
                     answerActionService = settings.answerActionService,
                     answerActionEntityId = settings.answerActionEntityId,
+                    answerActionData = settings.answerActionData,
+                    answerActionNeedsResponse = settings.answerActionNeedsResponse,
                     hangupActionService = settings.hangupActionService,
                     hangupActionEntityId = settings.hangupActionEntityId,
+                    hangupActionData = settings.hangupActionData,
+                    hangupActionNeedsResponse = settings.hangupActionNeedsResponse,
                     streamButtonLayout = settings.streamButtonLayout,
                     isLoaded = true
                 )
@@ -255,13 +260,26 @@ class SettingsViewModel @Inject constructor(
     }
     fun updateWebrtcProvider(value: String) { _uiState.update { it.copy(webrtcProvider = value) } }
 
-    fun updateCallActions(answerService: String, answerEntity: String, hangupService: String, hangupEntity: String) {
+    fun updateCallActions(
+        answerService: String,
+        answerEntity: String,
+        hangupService: String,
+        hangupEntity: String,
+        answerData: JsonObject = JsonObject(),
+        hangupData: JsonObject = JsonObject(),
+        answerNeedsResponse: Boolean = false,
+        hangupNeedsResponse: Boolean = false
+    ) {
         _uiState.update {
             it.copy(
                 answerActionService = answerService.trim(),
                 answerActionEntityId = answerEntity.trim(),
+                answerActionData = answerData.deepCopy(),
+                answerActionNeedsResponse = answerNeedsResponse,
                 hangupActionService = hangupService.trim(),
-                hangupActionEntityId = hangupEntity.trim()
+                hangupActionEntityId = hangupEntity.trim(),
+                hangupActionData = hangupData.deepCopy(),
+                hangupActionNeedsResponse = hangupNeedsResponse
             )
         }
     }
@@ -270,8 +288,12 @@ class SettingsViewModel @Inject constructor(
         val currentState = _uiState.value
         return currentState.answerActionService != savedSettings.answerActionService ||
             currentState.answerActionEntityId != savedSettings.answerActionEntityId ||
+            currentState.answerActionData != savedSettings.answerActionData ||
+            currentState.answerActionNeedsResponse != savedSettings.answerActionNeedsResponse ||
             currentState.hangupActionService != savedSettings.hangupActionService ||
-            currentState.hangupActionEntityId != savedSettings.hangupActionEntityId
+            currentState.hangupActionEntityId != savedSettings.hangupActionEntityId ||
+            currentState.hangupActionData != savedSettings.hangupActionData ||
+            currentState.hangupActionNeedsResponse != savedSettings.hangupActionNeedsResponse
     }
 
     fun protectedButtonsChanged(): Boolean {
@@ -293,8 +315,12 @@ class SettingsViewModel @Inject constructor(
                 webrtcProvider = currentState.webrtcProvider,
                 answerActionService = currentState.answerActionService,
                 answerActionEntityId = currentState.answerActionEntityId,
+                answerActionData = currentState.answerActionData,
+                answerActionNeedsResponse = currentState.answerActionNeedsResponse,
                 hangupActionService = currentState.hangupActionService,
                 hangupActionEntityId = currentState.hangupActionEntityId,
+                hangupActionData = currentState.hangupActionData,
+                hangupActionNeedsResponse = currentState.hangupActionNeedsResponse,
                 streamButtonLayout = currentState.streamButtonLayout
             )
             saveSettingsUseCase(settings)

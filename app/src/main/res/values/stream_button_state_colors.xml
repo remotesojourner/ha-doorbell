@@ -1,0 +1,26 @@
+<resources>
+    <string name="stream_button_state_colors_title">Background colors</string>
+    <string name="stream_button_state_colors_configure">Choose colors by state</string>
+    <plurals name="stream_button_state_colors_count">
+        <item quantity="one">%d state color</item>
+        <item quantity="other">%d state colors</item>
+    </plurals>
+    <string name="stream_button_state_colors_description">Choose a color for each state you want to highlight. Other states use the default background.</string>
+    <string name="stream_button_state_color_default">Default background</string>
+    <string name="stream_button_state_color_add_custom">Add a custom state</string>
+    <string name="stream_button_state_color_for">Color for %1$s</string>
+    <string name="stream_button_state_color_state">State</string>
+    <string name="stream_button_state_color_exact">Enter the state exactly as Home Assistant reports it.</string>
+    <string name="stream_button_state_color_exists">This state already has a color. Select it from the list to edit it.</string>
+    <string name="stream_button_state_color_hex">Hex color</string>
+    <string name="stream_button_state_color_format">Use #RRGGBB or #AARRGGBB.</string>
+    <string name="stream_button_state_color_remove">Use default background</string>
+    <string name="stream_button_state_color_red">Red</string>
+    <string name="stream_button_state_color_orange">Orange</string>
+    <string name="stream_button_state_color_yellow">Yellow</string>
+    <string name="stream_button_state_color_green">Green</string>
+    <string name="stream_button_state_color_blue">Blue</string>
+    <string name="stream_button_state_color_purple">Purple</string>
+    <string name="stream_button_state_color_white">White</string>
+    <string name="stream_button_state_color_black">Black</string>
+</resources>

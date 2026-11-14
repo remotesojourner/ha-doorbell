@@ -1,5 +1,8 @@
 package com.novasoftware.hadoorbell.domain.usecase
 
+import com.google.gson.JsonObject
+import com.novasoftware.hadoorbell.domain.model.CallActions
+import com.novasoftware.hadoorbell.domain.model.CallServiceSettings
 import com.novasoftware.hadoorbell.domain.model.Settings
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
@@ -24,12 +27,19 @@ class SaveSettingsUseCaseTest {
 
     @Test
     fun `invoke passes settings model fields to repository`() = runTest {
+        val answerData = JsonObject().apply { addProperty("message", "Answering") }
+        val hangupData = JsonObject().apply { addProperty("message", "Ending") }
         val settings = Settings(
             url = "https://home.local",
             token = "token_abc",
             streamSource = "front_cam",
             instantTwoWayAudio = true,
             webrtcProvider = "webrtc",
+            answerActionService = "notify.answer",
+            hangupActionService = "notify.hangup",
+            answerActionData = answerData,
+            hangupActionData = hangupData,
+            hangupActionNeedsResponse = true,
             streamButtonLayout = StreamButtonLayout(bottom = listOf(
                 StreamButton("chime", StreamButtonAction.CallService("button", "press", "button.chime"))
             ))
@@ -42,6 +52,10 @@ class SaveSettingsUseCaseTest {
                 source = "front_cam",
                 instantTwoWayAudio = true,
                 provider = "webrtc",
+                callActions = CallActions(
+                    answer = CallServiceSettings("notify.answer", data = answerData),
+                    hangup = CallServiceSettings("notify.hangup", data = hangupData, needsResponse = true)
+                ),
                 streamButtonLayout = settings.streamButtonLayout
             )
         }

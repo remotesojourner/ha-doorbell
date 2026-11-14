@@ -2,6 +2,8 @@ package com.novasoftware.hadoorbell.ui.stream
 
 import android.content.Context
 import com.google.gson.JsonObject
+import com.novasoftware.hadoorbell.domain.model.CallActions
+import com.novasoftware.hadoorbell.domain.model.CallServiceSettings
 import com.novasoftware.hadoorbell.MainDispatcherRule
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.data.repository.SettingsRepositoryImpl
@@ -75,10 +77,7 @@ class StreamViewModelTest {
             every { streamSourceFlow } returns flowOf("camera1")
             every { instantTwoWayAudioFlow } returns flowOf(false)
             every { webrtcProviderFlow } returns flowOf("webrtc")
-            every { answerActionServiceFlow } returns flowOf("")
-            every { answerActionEntityIdFlow } returns flowOf("")
-            every { hangupActionServiceFlow } returns flowOf("")
-            every { hangupActionEntityIdFlow } returns flowOf("")
+            every { callActionsFlow } returns flowOf(CallActions())
             every { streamButtonLayoutFlow } returns flowOf(StreamButtonLayout())
         }
         
@@ -411,20 +410,20 @@ class StreamViewModelTest {
 
     @Test
     fun `initializeConnection loads call action settings`() = runTest {
-        every { appPreferences.answerActionServiceFlow } returns flowOf("switch.turn_on")
-        every { appPreferences.answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
-        every { appPreferences.hangupActionServiceFlow } returns flowOf("switch.turn_off")
-        every { appPreferences.hangupActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+        val callActions = intercomCallActions()
+        every { appPreferences.callActionsFlow } returns flowOf(callActions)
 
         viewModel.initializeConnection(context)
         advanceUntilIdle()
 
         val uiState = viewModel.uiState.value
-        assertEquals("switch.turn_on", uiState.answerActionService)
-        assertEquals("switch.doorbell_talk", uiState.answerActionEntityId)
-        assertEquals("switch.turn_off", uiState.hangupActionService)
-        assertEquals("switch.doorbell_talk", uiState.hangupActionEntityId)
+        assertEquals(callActions, uiState.callActions)
     }
+
+    private fun intercomCallActions() = CallActions(
+        answer = CallServiceSettings("switch.turn_on", "switch.doorbell_talk"),
+        hangup = CallServiceSettings("switch.turn_off", "switch.doorbell_talk")
+    )
 
     @Test
     fun `returning to the stream loads the new layout and enables instant audio once Quick Reply is removed`() = runTest {
@@ -618,8 +617,9 @@ class StreamViewModelTest {
 
     @Test
     fun `answer action runs only after the WebRTC connection is ready`() = runTest {
-        every { appPreferences.answerActionServiceFlow } returns flowOf("switch.turn_on")
-        every { appPreferences.answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+        val data = JsonObject().apply { addProperty("volume_level", 0.25) }
+        val action = CallServiceSettings("media_player.volume_set", "media_player.doorbell", data)
+        every { appPreferences.callActionsFlow } returns flowOf(CallActions(answer = action))
 
         viewModel.initializeConnection(context)
         advanceUntilIdle()
@@ -629,21 +629,20 @@ class StreamViewModelTest {
         advanceTimeBy(200)
         runCurrent()
 
-        coVerify(exactly = 0) { repository.callService(any(), any(), any()) }
+        coVerify(exactly = 0) { repository.callService(any(), any(), any(), any(), any()) }
 
         viewModel.startStream(videoSink)
         advanceUntilIdle()
 
         coVerifyOrder {
             webRtcManager.startConnection(any(), true, any())
-            repository.callService("switch", "turn_on", "switch.doorbell_talk")
+            repository.callService("media_player", "volume_set", "media_player.doorbell", data, false)
         }
     }
 
     @Test
     fun `answer action is not sent when the screen is left during the restart`() = runTest {
-        every { appPreferences.answerActionServiceFlow } returns flowOf("switch.turn_on")
-        every { appPreferences.answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+        every { appPreferences.callActionsFlow } returns flowOf(CallActions(answer = intercomCallActions().answer))
 
         viewModel.initializeConnection(context)
         advanceUntilIdle()
@@ -661,10 +660,9 @@ class StreamViewModelTest {
 
     @Test
     fun `hang up action is sent when leaving an active call`() = runTest {
-        every { appPreferences.answerActionServiceFlow } returns flowOf("switch.turn_on")
-        every { appPreferences.answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
-        every { appPreferences.hangupActionServiceFlow } returns flowOf("switch.turn_off")
-        every { appPreferences.hangupActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+        val data = JsonObject().apply { addProperty("message", "Call ended") }
+        val action = CallServiceSettings("notify.doorbell", data = data, needsResponse = true)
+        every { appPreferences.callActionsFlow } returns flowOf(intercomCallActions().copy(hangup = action))
 
         viewModel.initializeConnection(context)
         advanceUntilIdle()
@@ -679,15 +677,12 @@ class StreamViewModelTest {
         viewModel.teardownConnection()
         advanceUntilIdle()
 
-        coVerify { repository.callService("switch", "turn_off", "switch.doorbell_talk") }
+        coVerify { repository.callService("notify", "doorbell", null, data, true) }
     }
 
     @Test
     fun `ending the call mutes the microphone immediately`() = runTest {
-        every { appPreferences.answerActionServiceFlow } returns flowOf("switch.turn_on")
-        every { appPreferences.answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
-        every { appPreferences.hangupActionServiceFlow } returns flowOf("switch.turn_off")
-        every { appPreferences.hangupActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+        every { appPreferences.callActionsFlow } returns flowOf(intercomCallActions())
 
         viewModel.initializeConnection(context)
         advanceUntilIdle()
@@ -707,10 +702,9 @@ class StreamViewModelTest {
 
     @Test
     fun `hang up action runs before the audio session is torn down`() = runTest {
-        every { appPreferences.answerActionServiceFlow } returns flowOf("switch.turn_on")
-        every { appPreferences.answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
-        every { appPreferences.hangupActionServiceFlow } returns flowOf("switch.turn_off")
-        every { appPreferences.hangupActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+        val data = JsonObject().apply { addProperty("message", "Call ended") }
+        val action = CallServiceSettings("notify.doorbell", data = data)
+        every { appPreferences.callActionsFlow } returns flowOf(intercomCallActions().copy(hangup = action))
 
         viewModel.initializeConnection(context)
         advanceUntilIdle()
@@ -726,7 +720,7 @@ class StreamViewModelTest {
 
         coVerifyOrder {
             webRtcManager.setMicrophoneEnabled(false)
-            repository.callService("switch", "turn_off", "switch.doorbell_talk")
+            repository.callService("notify", "doorbell", null, data, false)
             webRtcManager.disconnect()
         }
         assertFalse(viewModel.uiState.value.isMicEnabled)
@@ -734,8 +728,7 @@ class StreamViewModelTest {
 
     @Test
     fun `answer action failures are reported to the user`() = runTest {
-        every { appPreferences.answerActionServiceFlow } returns flowOf("switch.turn_on")
-        every { appPreferences.answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+        every { appPreferences.callActionsFlow } returns flowOf(CallActions(answer = intercomCallActions().answer))
         coEvery { repository.callService("switch", "turn_on", "switch.doorbell_talk") } returns
             Result.failure(RuntimeException("service unavailable"))
 

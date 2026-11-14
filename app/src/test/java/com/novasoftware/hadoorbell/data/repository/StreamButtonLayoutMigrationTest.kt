@@ -163,6 +163,28 @@ class StreamButtonLayoutMigrationTest {
         assertEquals(layout, decoded)
         assertEquals("light.porch", decoded.top.single().displayName)
         assertEquals("light.porch", decoded.top.single().iconEntityId)
+        assertTrue(decoded.top.single().stateColors.isEmpty())
+    }
+
+    @Test
+    fun `state colors round trip and malformed entries do not discard a layout`() {
+        val button = StreamButton(
+            id = "chime",
+            action = StreamButtonAction.CallService("button", "press", "button.chime"),
+            stateEntityId = "select.status",
+            stateColors = mapOf("Ready" to "#008000", "Waiting for reply" to "#80FF0000")
+        )
+        val layout = StreamButtonLayout(top = listOf(button))
+        val serialized = StreamButtonLayoutJson.encode(layout)
+        assertEquals(layout, StreamButtonLayoutJson.decode(serialized))
+
+        val json = JsonParser.parseString(serialized).asJsonObject
+        json.getAsJsonArray("top")[0].asJsonObject.getAsJsonObject("stateColors").apply {
+            addProperty("Broken", "#xyzxyz")
+            addProperty("Wrong type", 123456)
+            addProperty("Ready", "008000")
+        }
+        assertEquals(layout, StreamButtonLayoutJson.decode(json.toString()))
     }
 
     @Test

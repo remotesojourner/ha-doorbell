@@ -1,5 +1,6 @@
 package com.novasoftware.hadoorbell.ui.settings
 
+import com.google.gson.JsonObject
 import com.novasoftware.hadoorbell.MainDispatcherRule
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
@@ -161,6 +162,19 @@ class SettingsViewModelTest {
 
         viewModel.updateCallActions("switch.turn_on", "switch.doorbell_talk", "switch.turn_off", "script.doorbell_hangup")
         assertTrue(viewModel.callActionsChanged())
+    }
+
+    @Test
+    fun `changing only call service data requires authentication`() = runTest {
+        viewModel.updateCallActions(
+            "switch.turn_on", "switch.doorbell_talk", "switch.turn_off", "switch.doorbell_talk",
+            answerData = JsonObject().apply { addProperty("duration", 3) }
+        )
+
+        assertTrue(viewModel.callActionsChanged())
+        viewModel.saveSettings {}
+        assertFalse(viewModel.callActionsChanged())
+        coVerify { saveSettingsUseCase(match { it.answerActionData.get("duration")?.asInt == 3 }) }
     }
 
     @Test

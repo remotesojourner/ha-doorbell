@@ -1,5 +1,8 @@
 package com.novasoftware.hadoorbell.domain.usecase
 
+import com.google.gson.JsonObject
+import com.novasoftware.hadoorbell.domain.model.CallActions
+import com.novasoftware.hadoorbell.domain.model.CallServiceSettings
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantConnection
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.repository.SettingsRepository
@@ -10,6 +13,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -17,6 +21,8 @@ class GetSettingsUseCaseTest {
 
     private lateinit var repository: SettingsRepository
     private lateinit var getSettingsUseCase: GetSettingsUseCase
+    private val answerData = JsonObject().apply { addProperty("message", "Hello") }
+    private val hangupData = JsonObject().apply { addProperty("message", "Goodbye") }
 
     @Before
     fun setup() {
@@ -26,10 +32,12 @@ class GetSettingsUseCaseTest {
             every { streamSourceFlow } returns flowOf("front_cam")
             every { instantTwoWayAudioFlow } returns flowOf(false)
             every { webrtcProviderFlow } returns flowOf("webrtc")
-            every { answerActionServiceFlow } returns flowOf("switch.turn_on")
-            every { answerActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
-            every { hangupActionServiceFlow } returns flowOf("switch.turn_off")
-            every { hangupActionEntityIdFlow } returns flowOf("switch.doorbell_talk")
+            every { callActionsFlow } returns flowOf(
+                CallActions(
+                    answer = CallServiceSettings("switch.turn_on", "switch.doorbell_talk", answerData),
+                    hangup = CallServiceSettings("switch.turn_off", "switch.doorbell_talk", hangupData, true)
+                )
+            )
             every { streamButtonLayoutFlow } returns flowOf(StreamButtonLayout())
         }
         getSettingsUseCase = GetSettingsUseCase(repository)
@@ -48,6 +56,10 @@ class GetSettingsUseCaseTest {
         assertEquals("switch.doorbell_talk", result.answerActionEntityId)
         assertEquals("switch.turn_off", result.hangupActionService)
         assertEquals("switch.doorbell_talk", result.hangupActionEntityId)
+        assertEquals(answerData, result.answerActionData)
+        assertEquals(hangupData, result.hangupActionData)
+        assertFalse(result.answerActionNeedsResponse)
+        assertTrue(result.hangupActionNeedsResponse)
         assertEquals(StreamButtonLayout(), result.streamButtonLayout)
     }
 }

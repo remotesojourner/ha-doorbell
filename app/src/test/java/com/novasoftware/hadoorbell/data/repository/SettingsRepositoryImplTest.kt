@@ -1,9 +1,12 @@
 package com.novasoftware.hadoorbell.data.repository
 
 import android.content.Context
+import androidx.datastore.preferences.core.edit
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.gson.JsonObject
+import com.novasoftware.hadoorbell.domain.model.CallActions
+import com.novasoftware.hadoorbell.domain.model.CallServiceSettings
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantConnection
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
@@ -37,7 +40,7 @@ class SettingsRepositoryImplTest {
         appPreferences.saveSettings(
             source = " camera_1 ",
             instantTwoWayAudio = true,
-            answerActionService = "switch.turn_on",
+            callActions = CallActions(answer = CallServiceSettings("switch.turn_on")),
             streamButtonLayout = layout
         )
         appPreferences.saveHomeAssistantConnection("  192.168.1.100:8123/  ", " my_token ")
@@ -46,7 +49,7 @@ class SettingsRepositoryImplTest {
         assertEquals(connection, appPreferences.homeAssistantConnectionFlow.first())
         assertEquals("camera_1", appPreferences.streamSourceFlow.first())
         assertEquals(true, appPreferences.instantTwoWayAudioFlow.first())
-        assertEquals("switch.turn_on", appPreferences.answerActionServiceFlow.first())
+        assertEquals("switch.turn_on", appPreferences.callActionsFlow.first().answer.service)
         assertEquals(layout, appPreferences.streamButtonLayoutFlow.first())
 
         appPreferences.saveSettings(source = "camera_2")
@@ -63,20 +66,43 @@ class SettingsRepositoryImplTest {
 
     @Test
     fun `saveSettings stores call actions`() = runTest {
+        val answerData = JsonObject().apply { addProperty("value", 25) }
+        val hangupData = JsonObject().apply { addProperty("value", 0) }
         appPreferences.saveSettings(
             source = "camera",
             instantTwoWayAudio = false,
             provider = "frigate",
-            answerActionService = " switch.turn_on ",
-            answerActionEntityId = " switch.doorbell_talk ",
-            hangupActionService = " switch.turn_off ",
-            hangupActionEntityId = " switch.doorbell_talk "
+            callActions = CallActions(
+                answer = CallServiceSettings(" light.turn_on ", " light.doorbell ", answerData),
+                hangup = CallServiceSettings(" light.turn_off ", " light.doorbell ", hangupData, true)
+            )
         )
 
-        assertEquals("switch.turn_on", appPreferences.answerActionServiceFlow.first())
-        assertEquals("switch.doorbell_talk", appPreferences.answerActionEntityIdFlow.first())
-        assertEquals("switch.turn_off", appPreferences.hangupActionServiceFlow.first())
-        assertEquals("switch.doorbell_talk", appPreferences.hangupActionEntityIdFlow.first())
+        assertEquals(
+            CallActions(
+                answer = CallServiceSettings("light.turn_on", "light.doorbell", answerData),
+                hangup = CallServiceSettings("light.turn_off", "light.doorbell", hangupData, true)
+            ),
+            appPreferences.callActionsFlow.first()
+        )
+    }
+
+    @Test
+    fun `existing call services and entities load with empty service data`() = runTest {
+        context.dataStore.edit {
+            it[SettingsRepositoryImpl.ANSWER_ACTION_SERVICE] = "switch.turn_on"
+            it[SettingsRepositoryImpl.ANSWER_ACTION_ENTITY_ID] = "switch.doorbell"
+            it[SettingsRepositoryImpl.HANGUP_ACTION_SERVICE] = "switch.turn_off"
+            it[SettingsRepositoryImpl.HANGUP_ACTION_ENTITY_ID] = "switch.doorbell"
+        }
+
+        assertEquals(
+            CallActions(
+                answer = CallServiceSettings("switch.turn_on", "switch.doorbell"),
+                hangup = CallServiceSettings("switch.turn_off", "switch.doorbell")
+            ),
+            appPreferences.callActionsFlow.first()
+        )
     }
 
     @Test

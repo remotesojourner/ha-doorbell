@@ -6,6 +6,7 @@ import com.google.gson.JsonParser
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
+import com.novasoftware.hadoorbell.domain.model.normalizeStreamButtonColor
 import com.novasoftware.hadoorbell.domain.usecase.OpenDoorUseCase
 
 internal object StreamButtonLayoutJson {
@@ -63,6 +64,14 @@ internal object StreamButtonLayoutJson {
                 button.entityIcon?.let { addProperty("entityIcon", it) }
                 button.entityName?.let { addProperty("entityName", it) }
                 button.stateEntityId?.let { addProperty("stateEntityId", it) }
+                if (!button.stateEntityId.isNullOrBlank()) {
+                    val colors = JsonObject().apply {
+                        button.stateColors.forEach { (state, value) ->
+                            if (state.isNotBlank()) normalizeStreamButtonColor(value)?.let { addProperty(state, it) }
+                        }
+                    }
+                    if (!colors.isEmpty) add("stateColors", colors)
+                }
                 add("action", encodeAction(button.action))
             })
         }
@@ -103,6 +112,7 @@ internal object StreamButtonLayoutJson {
 
     private fun decodeRow(row: JsonArray): List<StreamButton> = row.map { element ->
         val button = element.asJsonObject
+        val stateEntityId = button.optionalString("stateEntityId")
         StreamButton(
             id = button.string("id"),
             action = decodeAction(button.getAsJsonObject("action")),
@@ -111,8 +121,18 @@ internal object StreamButtonLayoutJson {
             icon = button.optionalString("icon"),
             entityIcon = button.optionalString("entityIcon"),
             entityName = button.optionalString("entityName"),
-            stateEntityId = button.optionalString("stateEntityId")
+            stateEntityId = stateEntityId,
+            stateColors = if (stateEntityId == null) emptyMap() else button.decodeStateColors()
         )
+    }
+
+    private fun JsonObject.decodeStateColors(): Map<String, String> = buildMap {
+        val colors = this@decodeStateColors.get("stateColors") as? JsonObject ?: return@buildMap
+        for ((state, value) in colors.entrySet()) {
+            if (state.isNotBlank() && value.isJsonPrimitive && value.asJsonPrimitive.isString) {
+                normalizeStreamButtonColor(value.asString)?.let { put(state, it) }
+            }
+        }
     }
 
     private fun decodeAction(action: JsonObject): StreamButtonAction = with(action) {

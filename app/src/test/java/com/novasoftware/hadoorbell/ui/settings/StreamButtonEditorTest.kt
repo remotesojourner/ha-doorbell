@@ -7,6 +7,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
@@ -14,9 +15,11 @@ import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.Modifier
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -219,6 +222,62 @@ class StreamButtonEditorTest {
         composeTestRule.onNodeWithText("Done").performClick()
         composeTestRule.runOnIdle {
             assertEquals(script, layout.top.single())
+        }
+    }
+
+    @Test
+    fun `state colors can be set from entity options and custom states`() {
+        val button = StreamButton(
+            "entry-mode",
+            StreamButtonAction.RunScript("script.toggle_porch"),
+            entityName = "Toggle porch",
+            stateEntityId = "select.entry_mode"
+        )
+        var layout by mutableStateOf(StreamButtonLayout(top = listOf(button)))
+        val entities = listOf(
+            HomeAssistantEntity("select.entry_mode", "Entry mode", options = listOf("Day", "Night"), state = "Day")
+        )
+        composeTestRule.setContent {
+            MaterialTheme {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    StreamButtonEditor(
+                        layout = layout,
+                        entities = entities,
+                        isLoadingEntities = false,
+                        entityLoadError = null,
+                        onLoadEntities = {},
+                        onLayoutChange = { layout = it }
+                    )
+                }
+            }
+        }
+
+        composeTestRule.onNodeWithText("Toggle porch").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Choose colors by state").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Night").performClick()
+        composeTestRule.onNodeWithContentDescription("Blue").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("OK").performClick()
+        composeTestRule.onNodeWithText("Add a custom state").performSemanticsAction(SemanticsActions.OnClick)
+        composeTestRule.onNodeWithTag("state_color_state").performScrollTo().performTextInput("Guest mode")
+        composeTestRule.onNodeWithTag("state_color_hex").performScrollTo().performTextInput("802e7d32")
+        composeTestRule.onNodeWithText("OK").performClick()
+        composeTestRule.onNodeWithText("Done").performClick()
+        composeTestRule.onNodeWithText("Done").performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(
+                button.copy(stateColors = mapOf("Night" to "#1565C0", "Guest mode" to "#802E7D32")),
+                layout.top.single()
+            )
+        }
+
+        composeTestRule.onNodeWithText("Toggle porch").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Use action target").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Choose colors by state").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Done").performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(button.copy(stateEntityId = null), layout.top.single())
         }
     }
 

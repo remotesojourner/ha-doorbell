@@ -10,9 +10,15 @@ data class StreamButton(
     val icon: String? = null,
     val entityIcon: String? = null,
     val entityName: String? = null,
-    val stateEntityId: String? = null
+    val stateEntityId: String? = null,
+    val stateColors: Map<String, String> = emptyMap()
 ) {
     val iconEntityId: String get() = stateEntityId?.trim()?.takeIf(String::isNotEmpty) ?: action.entityId
+
+    fun colorForState(state: String?): String? {
+        if (state == null || stateEntityId.isNullOrBlank()) return null
+        return stateColors[state]?.let(::normalizeStreamButtonColor)
+    }
 
     val displayName: String get() = entityName?.takeIf { it.isNotBlank() } ?: when (val currentAction = action) {
         is StreamButtonAction.CallService -> currentAction.entityId.ifBlank {
@@ -22,6 +28,11 @@ data class StreamButton(
         else -> currentAction.entityId
     }
 }
+
+private val streamButtonColorHex = Regex("[0-9a-fA-F]{6}([0-9a-fA-F]{2})?")
+
+fun normalizeStreamButtonColor(value: String): String? =
+    value.trim().removePrefix("#").takeIf(streamButtonColorHex::matches)?.let { "#${it.uppercase()}" }
 
 data class StreamButtonLayout(
     val top: List<StreamButton> = emptyList(),

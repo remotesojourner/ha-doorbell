@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -21,6 +22,7 @@ import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -136,6 +138,28 @@ class StreamBottomControlsTest {
         control.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Locked"))
         composeTestRule.runOnIdle { appearance.value = HomeAssistantEntityAppearance("unlocked") }
         control.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unlocked"))
+    }
+
+    @Test
+    fun `custom backgrounds match the selected entity state exactly`() {
+        val button = StreamButton(
+            id = "chime",
+            action = StreamButtonAction.CallService("button", "press", "button.chime"),
+            stateEntityId = "select.status",
+            stateColors = mapOf(
+                "Ready" to "#008000",
+                "Waiting for reply" to "#80FF0000",
+                "unavailable" to "#303030"
+            )
+        )
+
+        assertEquals(Color(0xFF008000), button.backgroundForState(HomeAssistantEntityAppearance("Ready")))
+        assertEquals(Color(0x80FF0000), button.backgroundForState(HomeAssistantEntityAppearance("Waiting for reply")))
+        assertEquals(Color(0xFF303030), button.backgroundForState(HomeAssistantEntityAppearance("unavailable")))
+        assertNull(button.backgroundForState(HomeAssistantEntityAppearance("ready")))
+        assertNull(button.backgroundForState(HomeAssistantEntityAppearance("unknown")))
+        assertNull(button.backgroundForState(null))
+        assertNull(button.copy(stateEntityId = null).backgroundForState(HomeAssistantEntityAppearance("Ready")))
     }
 
     private fun showControls(

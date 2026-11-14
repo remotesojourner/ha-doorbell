@@ -1,5 +1,6 @@
 package com.novasoftware.hadoorbell.domain.usecase
 
+import com.novasoftware.hadoorbell.domain.model.CallActions
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantConnection
 import com.novasoftware.hadoorbell.domain.model.Settings
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
@@ -17,24 +18,26 @@ class GetSettingsUseCase @Inject constructor(
             repository.streamSourceFlow,
             repository.instantTwoWayAudioFlow,
             repository.webrtcProviderFlow,
-            repository.answerActionServiceFlow,
-            repository.answerActionEntityIdFlow,
-            repository.hangupActionServiceFlow,
-            repository.hangupActionEntityIdFlow,
+            repository.callActionsFlow,
             repository.streamButtonLayoutFlow
         ) { args: Array<Any?> ->
             val connection = args[0] as HomeAssistantConnection
+            val callActions = args[4] as CallActions
             Settings(
                 url = connection.url,
                 token = connection.token,
                 streamSource = args[1] as? String ?: "",
                 instantTwoWayAudio = args[2] as? Boolean ?: false,
                 webrtcProvider = args[3] as? String ?: "frigate",
-                answerActionService = args[4] as? String ?: "",
-                answerActionEntityId = args[5] as? String ?: "",
-                hangupActionService = args[6] as? String ?: "",
-                hangupActionEntityId = args[7] as? String ?: "",
-                streamButtonLayout = args[8] as StreamButtonLayout
+                answerActionService = callActions.answer.service,
+                answerActionEntityId = callActions.answer.entityId,
+                hangupActionService = callActions.hangup.service,
+                hangupActionEntityId = callActions.hangup.entityId,
+                streamButtonLayout = args[5] as StreamButtonLayout,
+                answerActionData = callActions.answer.data,
+                hangupActionData = callActions.hangup.data,
+                answerActionNeedsResponse = callActions.answer.needsResponse,
+                hangupActionNeedsResponse = callActions.hangup.needsResponse
             )
         }
     }

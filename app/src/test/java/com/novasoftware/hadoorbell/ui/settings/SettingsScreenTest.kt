@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -290,20 +291,29 @@ class SettingsScreenTest {
         composeTestRule.onNodeWithText("Choose a Home Assistant entity").assertIsDisplayed()
         composeTestRule.onNodeWithText("Finish the call").assertDoesNotExist()
         composeTestRule.onNodeWithText("Side intercom").performClick()
+        val answerData = composeTestRule.onNodeWithTag("answer_action_data")
+        answerData.performScrollTo().performTextInput("[]")
+        composeTestRule.onNodeWithText("Done").assertIsNotEnabled()
+        answerData.performTextClearance()
+        answerData.performTextInput("""{"level": 3}""")
 
         hangUpService.performScrollTo().performClick()
         composeTestRule.onNodeWithText("Run script").performClick()
         hangUpEntity.performScrollTo().performClick()
         composeTestRule.onNodeWithText("Side intercom").assertDoesNotExist()
         composeTestRule.onNodeWithText("Finish the call").performClick()
+        composeTestRule.onNodeWithTag("hangup_action_data").performScrollTo()
+            .performTextInput("""{"variables": {"end": true}}""")
         composeTestRule.runOnIdle { assertFalse(viewModel.callActionsChanged()) }
         composeTestRule.onNodeWithText("Done").performClick()
         composeTestRule.runOnIdle {
             val state = viewModel.uiState.value
             assertEquals("switch.toggle", state.answerActionService)
             assertEquals("switch.side", state.answerActionEntityId)
+            assertEquals(3, state.answerActionData.get("level").asInt)
             assertEquals("script.turn_on", state.hangupActionService)
             assertEquals("script.end_call", state.hangupActionEntityId)
+            assertTrue(state.hangupActionData.getAsJsonObject("variables").get("end").asBoolean)
         }
 
         composeTestRule.onNodeWithText("Call").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
@@ -314,8 +324,10 @@ class SettingsScreenTest {
             val state = viewModel.uiState.value
             assertEquals("switch.toggle", state.answerActionService)
             assertEquals("", state.answerActionEntityId)
+            assertEquals(3, state.answerActionData.get("level").asInt)
             assertEquals("", state.hangupActionService)
             assertEquals("", state.hangupActionEntityId)
+            assertTrue(state.hangupActionData.isEmpty)
         }
     }
 

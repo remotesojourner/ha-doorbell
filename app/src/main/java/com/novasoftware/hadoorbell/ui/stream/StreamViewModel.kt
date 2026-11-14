@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.data.repository.SettingsRepositoryImpl
+import com.novasoftware.hadoorbell.domain.model.CallServiceSettings
 import com.novasoftware.hadoorbell.domain.repository.HomeAssistantRepository
 import com.novasoftware.hadoorbell.domain.usecase.CallActionUseCase
 import com.novasoftware.hadoorbell.domain.usecase.ExecuteStreamButtonUseCase
@@ -90,19 +91,13 @@ class StreamViewModel @Inject constructor(
         isScreenActive = true
         initializeJob = viewModelScope.launch {
             val layout = appPreferences.streamButtonLayoutFlow.first()
-            val answerService = appPreferences.answerActionServiceFlow.first() ?: ""
-            val answerEntity = appPreferences.answerActionEntityIdFlow.first() ?: ""
-            val hangupService = appPreferences.hangupActionServiceFlow.first() ?: ""
-            val hangupEntity = appPreferences.hangupActionEntityIdFlow.first() ?: ""
+            val callActions = appPreferences.callActionsFlow.first()
 
             _uiState.update {
                 it.copy(
                     lockStates = emptyMap(),
                     entityAppearances = emptyMap(),
-                    answerActionService = answerService,
-                    answerActionEntityId = answerEntity,
-                    hangupActionService = hangupService,
-                    hangupActionEntityId = hangupEntity,
+                    callActions = callActions,
                     streamButtonLayout = layout,
                     isStreamButtonLayoutReady = true
                 )
@@ -314,11 +309,7 @@ class StreamViewModel @Inject constructor(
                 if (!isScreenActive) return@launch
 
                 callAnswered = true
-                runCallAction(
-                    service = _uiState.value.answerActionService,
-                    entityId = _uiState.value.answerActionEntityId,
-                    label = "Answer"
-                )
+                runCallAction(currentState.callActions.answer, label = "Answer")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -342,11 +333,7 @@ class StreamViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 withContext(NonCancellable) {
-                    runCallAction(
-                        service = _uiState.value.hangupActionService,
-                        entityId = _uiState.value.hangupActionEntityId,
-                        label = "Hang up"
-                    )
+                    runCallAction(currentState.callActions.hangup, label = "Hang up")
                 }
                 if (isScreenActive) {
                     restartConnection(context)
@@ -362,23 +349,19 @@ class StreamViewModel @Inject constructor(
     }
 
     private fun sendHangUpAction() {
-        val state = _uiState.value
+        val action = _uiState.value.callActions.hangup
         viewModelScope.launch {
             withContext(NonCancellable) {
-                runCallAction(
-                    service = state.hangupActionService,
-                    entityId = state.hangupActionEntityId,
-                    label = "Hang up"
-                )
+                runCallAction(action, label = "Hang up")
             }
         }
     }
 
-    private suspend fun runCallAction(service: String, entityId: String, label: String) {
-        if (service.isBlank()) return
+    private suspend fun runCallAction(action: CallServiceSettings, label: String) {
+        if (action.service.isBlank()) return
 
         val result = withTimeoutOrNull(CALL_ACTION_TIMEOUT_MS) {
-            callActionUseCase(service, entityId)
+            callActionUseCase(action.service, action.entityId, action.data, action.needsResponse)
         }
 
         if (result == null) {

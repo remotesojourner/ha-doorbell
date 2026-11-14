@@ -7,6 +7,11 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.google.gson.JsonObject
+import com.google.gson.JsonParseException
+import com.google.gson.JsonParser
+import com.novasoftware.hadoorbell.domain.model.CallActions
+import com.novasoftware.hadoorbell.domain.model.CallServiceSettings
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantConnection
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.model.normalizeHomeAssistantUrl
@@ -28,8 +33,12 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
         val WEBRTC_PROVIDER = stringPreferencesKey("webrtc_provider")
         val ANSWER_ACTION_SERVICE = stringPreferencesKey("answer_action_service")
         val ANSWER_ACTION_ENTITY_ID = stringPreferencesKey("answer_action_entity_id")
+        val ANSWER_ACTION_DATA = stringPreferencesKey("answer_action_data")
+        val ANSWER_ACTION_NEEDS_RESPONSE = booleanPreferencesKey("answer_action_needs_response")
         val HANGUP_ACTION_SERVICE = stringPreferencesKey("hangup_action_service")
         val HANGUP_ACTION_ENTITY_ID = stringPreferencesKey("hangup_action_entity_id")
+        val HANGUP_ACTION_DATA = stringPreferencesKey("hangup_action_data")
+        val HANGUP_ACTION_NEEDS_RESPONSE = booleanPreferencesKey("hangup_action_needs_response")
     }
 
     override val homeAssistantConnectionFlow: Flow<HomeAssistantConnection> = context.dataStore.data.map {
@@ -38,10 +47,22 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
     override val streamSourceFlow: Flow<String?> = context.dataStore.data.map { it[STREAM_SOURCE]?.trim() }
     override val instantTwoWayAudioFlow: Flow<Boolean> = context.dataStore.data.map { it[INSTANT_TWO_WAY_AUDIO] ?: false }
     override val webrtcProviderFlow: Flow<String> = context.dataStore.data.map { it[WEBRTC_PROVIDER] ?: "frigate" }
-    override val answerActionServiceFlow: Flow<String?> = context.dataStore.data.map { it[ANSWER_ACTION_SERVICE]?.trim() }
-    override val answerActionEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[ANSWER_ACTION_ENTITY_ID]?.trim() }
-    override val hangupActionServiceFlow: Flow<String?> = context.dataStore.data.map { it[HANGUP_ACTION_SERVICE]?.trim() }
-    override val hangupActionEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[HANGUP_ACTION_ENTITY_ID]?.trim() }
+    override val callActionsFlow: Flow<CallActions> = context.dataStore.data.map {
+        CallActions(
+            answer = CallServiceSettings(
+                service = it[ANSWER_ACTION_SERVICE].orEmpty().trim(),
+                entityId = it[ANSWER_ACTION_ENTITY_ID].orEmpty().trim(),
+                data = decodeActionData(it[ANSWER_ACTION_DATA]),
+                needsResponse = it[ANSWER_ACTION_NEEDS_RESPONSE] ?: false
+            ),
+            hangup = CallServiceSettings(
+                service = it[HANGUP_ACTION_SERVICE].orEmpty().trim(),
+                entityId = it[HANGUP_ACTION_ENTITY_ID].orEmpty().trim(),
+                data = decodeActionData(it[HANGUP_ACTION_DATA]),
+                needsResponse = it[HANGUP_ACTION_NEEDS_RESPONSE] ?: false
+            )
+        )
+    }
     override val streamButtonLayoutFlow: Flow<StreamButtonLayout> = context.dataStore.data.map {
         it[STREAM_BUTTON_LAYOUT]?.let(StreamButtonLayoutJson::decode) ?: StreamButtonLayout()
     }
@@ -57,21 +78,31 @@ class SettingsRepositoryImpl(private val context: Context) : SettingsRepository 
         source: String,
         instantTwoWayAudio: Boolean,
         provider: String,
-        answerActionService: String,
-        answerActionEntityId: String,
-        hangupActionService: String,
-        hangupActionEntityId: String,
+        callActions: CallActions,
         streamButtonLayout: StreamButtonLayout
     ) {
         context.dataStore.edit { preferences ->
             preferences[STREAM_SOURCE] = source.trim()
             preferences[INSTANT_TWO_WAY_AUDIO] = instantTwoWayAudio
             preferences[WEBRTC_PROVIDER] = provider
-            preferences[ANSWER_ACTION_SERVICE] = answerActionService.trim()
-            preferences[ANSWER_ACTION_ENTITY_ID] = answerActionEntityId.trim()
-            preferences[HANGUP_ACTION_SERVICE] = hangupActionService.trim()
-            preferences[HANGUP_ACTION_ENTITY_ID] = hangupActionEntityId.trim()
+            preferences[ANSWER_ACTION_SERVICE] = callActions.answer.service.trim()
+            preferences[ANSWER_ACTION_ENTITY_ID] = callActions.answer.entityId.trim()
+            preferences[ANSWER_ACTION_DATA] = callActions.answer.data.toString()
+            preferences[ANSWER_ACTION_NEEDS_RESPONSE] = callActions.answer.needsResponse
+            preferences[HANGUP_ACTION_SERVICE] = callActions.hangup.service.trim()
+            preferences[HANGUP_ACTION_ENTITY_ID] = callActions.hangup.entityId.trim()
+            preferences[HANGUP_ACTION_DATA] = callActions.hangup.data.toString()
+            preferences[HANGUP_ACTION_NEEDS_RESPONSE] = callActions.hangup.needsResponse
             preferences[STREAM_BUTTON_LAYOUT] = StreamButtonLayoutJson.encode(streamButtonLayout)
+        }
+    }
+
+    private fun decodeActionData(value: String?): JsonObject {
+        if (value == null) return JsonObject()
+        return try {
+            JsonParser.parseString(value) as? JsonObject ?: JsonObject()
+        } catch (_: JsonParseException) {
+            JsonObject()
         }
     }
 }

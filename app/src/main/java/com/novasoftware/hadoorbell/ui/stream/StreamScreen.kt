@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
@@ -542,13 +543,17 @@ private fun StreamActionButton(
             }
         )
     }
-    val background = when (displayedLockState) {
+    val defaultBackground = when (displayedLockState) {
         LockState.Unlocked -> Color.Red.copy(alpha = 0.8f)
         LockState.Jammed -> Color(0xFFFFA500)
         LockState.Locking, LockState.Unlocking -> Color.Gray.copy(alpha = 0.8f)
         LockState.Unknown -> Color.DarkGray.copy(alpha = 0.8f)
         LockState.Locked, null -> Color.White.copy(alpha = 0.2f)
     }
+    val stateBackground = button.backgroundForState(entityAppearance)
+    val iconColor = if (stateBackground != null && stateBackground.alpha >= 0.75f &&
+        stateBackground.luminance() > 0.179f
+    ) Color.Black else Color.White
     val hasSeparateStateDescription = if (isLock) {
         usesStateEntity && button.iconEntityId != button.action.entityId
     } else {
@@ -577,8 +582,8 @@ private fun StreamActionButton(
         enabled = enabled,
         modifier = Modifier.size(circleSize).then(stateSemantics),
         shape = CircleShape,
-        color = background,
-        contentColor = Color.White.copy(alpha = if (enabled || isLock) 1f else 0.5f)
+        color = stateBackground ?: defaultBackground,
+        contentColor = iconColor.copy(alpha = if (enabled || isLock) 1f else 0.5f)
     ) {
         Box(contentAlignment = Alignment.Center) {
             val modifier = Modifier.size(iconSize)
@@ -589,4 +594,9 @@ private fun StreamActionButton(
             }
         }
     }
+}
+
+internal fun StreamButton.backgroundForState(appearance: HomeAssistantEntityAppearance?): Color? {
+    val hex = colorForState(appearance?.state)?.removePrefix("#") ?: return null
+    return Color(if (hex.length == 6) 0xFF000000L or hex.toLong(16) else hex.toLong(16))
 }
