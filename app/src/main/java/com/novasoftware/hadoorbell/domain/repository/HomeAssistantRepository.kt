@@ -9,7 +9,9 @@ import kotlinx.coroutines.flow.Flow
 interface HomeAssistantRepository {
     suspend fun getEntities(url: String, token: String): Result<List<HomeAssistantEntity>>
     suspend fun getServices(url: String, token: String): Result<List<HomeAssistantService>>
+    suspend fun getGo2rtcStreams(url: String, token: String): Result<List<String>>
     suspend fun getEntityState(entityId: String): Result<String>
+    suspend fun getImage(path: String): Result<ByteArray>
     suspend fun getEntityAppearance(entityId: String): Result<HomeAssistantEntityAppearance>
     fun observeEntityAppearances(entityIds: Set<String>): Flow<Map<String, HomeAssistantEntityAppearance>>
     suspend fun callService(domain: String, service: String, entityId: String?): Result<Unit>

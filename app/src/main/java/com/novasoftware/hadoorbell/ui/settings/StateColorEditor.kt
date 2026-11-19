@@ -2,12 +2,13 @@ package com.novasoftware.hadoorbell.ui.settings
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -54,8 +56,44 @@ internal fun StateColorEditor(
     onDismiss: () -> Unit
 ) {
     var editingState by rememberSaveable { mutableStateOf<String?>(null) }
-    val selectedState = editingState
-    if (selectedState != null) {
+    val states = buildList {
+        currentState?.takeIf(String::isNotBlank)?.let(::add)
+        addAll(entityOptions.filter(String::isNotBlank))
+        addAll(suggestedStates(entityId.substringBefore('.')))
+        addAll(stateColors.keys)
+        add("unavailable")
+        add("unknown")
+    }.distinct()
+
+    PickerSheet(title = stringResource(R.string.stream_button_state_colors_title), onDismiss = onDismiss) {
+        Text(
+            stringResource(R.string.stream_button_state_colors_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        TextButton(onClick = { editingState = "" }) {
+            Icon(Icons.Default.Add, contentDescription = null)
+            Text(
+                stringResource(R.string.stream_button_state_color_add_custom),
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        }
+        LazyColumn(modifier = PickerListModifier) {
+            items(states, key = { it }) { state ->
+                val color = stateColors[state]
+                ListItem(
+                    headlineContent = { Text(state) },
+                    supportingContent = {
+                        Text(color ?: stringResource(R.string.stream_button_state_color_default))
+                    },
+                    trailingContent = { color?.let { ColorSwatch(Color(it.toColorInt())) } },
+                    modifier = Modifier.clickable { editingState = state }
+                )
+            }
+        }
+    }
+
+    editingState?.let { selectedState ->
         StateColorDialog(
             selectedState = selectedState,
             selectedColor = stateColors[selectedState].orEmpty(),
@@ -70,53 +108,7 @@ internal fun StateColorEditor(
             },
             onDismiss = { editingState = null }
         )
-        return
     }
-
-    val states = buildList {
-        currentState?.takeIf(String::isNotBlank)?.let(::add)
-        addAll(entityOptions.filter(String::isNotBlank))
-        addAll(suggestedStates(entityId.substringBefore('.')))
-        addAll(stateColors.keys)
-        add("unavailable")
-        add("unknown")
-    }.distinct()
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.stream_button_state_colors_title)) },
-        text = {
-            Column {
-                Text(
-                    stringResource(R.string.stream_button_state_colors_description),
-                    style = MaterialTheme.typography.bodySmall
-                )
-                LazyColumn(modifier = Modifier.heightIn(max = 280.dp)) {
-                    items(states, key = { it }) { state ->
-                        val color = stateColors[state]
-                        Surface(onClick = { editingState = state }) {
-                            ListItem(
-                                headlineContent = { Text(state) },
-                                supportingContent = {
-                                    Text(color ?: stringResource(R.string.stream_button_state_color_default))
-                                },
-                                trailingContent = {
-                                    color?.let { ColorSwatch(Color(it.toColorInt())) }
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = { editingState = "" }) {
-                Text(stringResource(R.string.stream_button_state_color_add_custom))
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.stream_button_done)) }
-        }
-    )
 }
 
 @Composable

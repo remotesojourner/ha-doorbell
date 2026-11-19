@@ -43,5 +43,8 @@ data class SettingsUiState(
     val entityLoadError: HomeAssistantLoadError? = null,
     val services: List<HomeAssistantService> = emptyList(),
     val isLoadingServices: Boolean = false,
-    val serviceLoadError: HomeAssistantLoadError? = null
+    val serviceLoadError: HomeAssistantLoadError? = null,
+    val streams: List<String> = emptyList(),
+    val isLoadingStreams: Boolean = false,
+    val streamLoadError: HomeAssistantLoadError? = null
 )

@@ -23,11 +23,16 @@ data class StreamUiState(
     val runningStreamButtonIds: Set<String> = emptySet(),
     val runningLockEntityIds: Set<String> = emptySet()
 ) {
-    fun canRun(button: StreamButton): Boolean {
-        if (!isStreamButtonLayoutReady || button.id in runningStreamButtonIds) return false
+    val isStreamAvailable: Boolean get() = webRtcManager != null && errorMessage == null
+
+    fun isRunning(button: StreamButton): Boolean {
+        if (button.id in runningStreamButtonIds) return true
+        if (quickReplySheet?.button?.id == button.id && quickReplySheet.isSending) return true
         val lock = button.action as? StreamButtonAction.DoorLock
-        return lock == null || lock.entityId !in runningLockEntityIds
+        return lock != null && lock.entityId in runningLockEntityIds
     }
+
+    fun canRun(button: StreamButton): Boolean = isStreamButtonLayoutReady && !isRunning(button)
 }
 
 data class QuickReplySheetState(

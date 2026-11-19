@@ -8,6 +8,7 @@ import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantEntitiesUseCase
+import com.novasoftware.hadoorbell.domain.usecase.GetGo2rtcStreamsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantServicesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSettingsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.SaveHomeAssistantConnectionUseCase
@@ -40,6 +41,7 @@ class SettingsViewModelTest {
     private lateinit var saveSettingsUseCase: SaveSettingsUseCase
     private val saveHomeAssistantConnection = mockk<SaveHomeAssistantConnectionUseCase>(relaxed = true)
     private val getHomeAssistantServices = io.mockk.mockk<GetHomeAssistantServicesUseCase>()
+    private val getGo2rtcStreams = mockk<GetGo2rtcStreamsUseCase>()
     private lateinit var getHomeAssistantEntities: GetHomeAssistantEntitiesUseCase
     private lateinit var viewModel: SettingsViewModel
 
@@ -69,6 +71,7 @@ class SettingsViewModelTest {
             saveSettingsUseCase,
             getHomeAssistantEntities,
             getHomeAssistantServices,
+            getGo2rtcStreams,
             saveHomeAssistantConnection,
             mockk<HomeAssistantRepository>()
         )
@@ -320,5 +323,29 @@ class SettingsViewModelTest {
         assertFalse(viewModel.protectedButtonsChanged())
         viewModel.updateStreamButtonLayout(layout.copy(bottom = listOf(door.copy(requiresAuthentication = false))))
         assertTrue(viewModel.protectedButtonsChanged())
+    }
+
+    @Test
+    fun `go2rtc streams load from the verified connection and clear when it changes`() = runTest {
+        coEvery { getGo2rtcStreams("https://test.url", "token123") } returns Result.success(listOf("front_door"))
+
+        viewModel.loadStreams()
+        assertEquals(listOf("front_door"), viewModel.uiState.value.streams)
+
+        viewModel.updateUrl("https://new.url")
+        viewModel.loadStreams()
+        assertTrue(viewModel.uiState.value.streams.isEmpty())
+        coVerify(exactly = 0) { getGo2rtcStreams("https://new.url", any()) }
+    }
+
+    @Test
+    fun `a failed go2rtc stream lookup is reported`() = runTest {
+        coEvery { getGo2rtcStreams("https://test.url", "token123") } returns
+            Result.failure(IOException("Not found"))
+
+        viewModel.loadStreams()
+
+        assertEquals(HomeAssistantLoadError.RequestFailed, viewModel.uiState.value.streamLoadError)
+        assertFalse(viewModel.uiState.value.isLoadingStreams)
     }
 }

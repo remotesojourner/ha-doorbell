@@ -11,6 +11,7 @@ import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
 import com.novasoftware.hadoorbell.domain.model.normalizeHomeAssistantUrl
 import com.novasoftware.hadoorbell.domain.repository.HomeAssistantRepository
+import com.novasoftware.hadoorbell.domain.usecase.GetGo2rtcStreamsUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantEntitiesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetHomeAssistantServicesUseCase
 import com.novasoftware.hadoorbell.domain.usecase.GetSettingsUseCase
@@ -41,6 +42,7 @@ class SettingsViewModel @Inject constructor(
     private val saveSettingsUseCase: SaveSettingsUseCase,
     private val getHomeAssistantEntities: GetHomeAssistantEntitiesUseCase,
     private val getHomeAssistantServices: GetHomeAssistantServicesUseCase,
+    private val getGo2rtcStreams: GetGo2rtcStreamsUseCase,
     private val saveHomeAssistantConnection: SaveHomeAssistantConnectionUseCase,
     private val homeAssistantRepository: HomeAssistantRepository
 ) : ViewModel() {
@@ -51,6 +53,7 @@ class SettingsViewModel @Inject constructor(
     private var savedSettings = Settings()
     private var entityLoadJob: Job? = null
     private var serviceLoadJob: Job? = null
+    private var streamLoadJob: Job? = null
 
     init {
         loadSettings()
@@ -116,6 +119,7 @@ class SettingsViewModel @Inject constructor(
         if (draft == state) return
         entityLoadJob?.cancel()
         serviceLoadJob?.cancel()
+        streamLoadJob?.cancel()
         _uiState.value = draft.copy(
             connectionStatus = HomeAssistantConnectionStatus.Unchecked,
             entities = emptyList(),
@@ -123,7 +127,10 @@ class SettingsViewModel @Inject constructor(
             entityLoadError = null,
             services = emptyList(),
             isLoadingServices = false,
-            serviceLoadError = null
+            serviceLoadError = null,
+            streams = emptyList(),
+            isLoadingStreams = false,
+            streamLoadError = null
         )
     }
 
@@ -222,6 +229,23 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun loadStreams() {
+        val state = _uiState.value
+        if (state.connectionStatus != HomeAssistantConnectionStatus.Verified || state.isLoadingStreams) return
+
+        _uiState.update { it.copy(isLoadingStreams = true, streamLoadError = null) }
+        streamLoadJob = viewModelScope.launch {
+            getGo2rtcStreams(state.url, state.token).fold(
+                onSuccess = { streams ->
+                    _uiState.update { it.copy(streams = streams, isLoadingStreams = false) }
+                },
+                onFailure = { failure ->
+                    _uiState.update { it.copy(isLoadingStreams = false, streamLoadError = loadError(failure)) }
+                }
+            )
+        }
+    }
+
     private fun loadError(failure: Throwable): HomeAssistantLoadError = when {
         failure is IllegalArgumentException -> HomeAssistantLoadError.InvalidConnection
         failure is HttpException && (failure.code() == 401 || failure.code() == 403) ->
@@ -294,6 +318,20 @@ class SettingsViewModel @Inject constructor(
             currentState.hangupActionEntityId != savedSettings.hangupActionEntityId ||
             currentState.hangupActionData != savedSettings.hangupActionData ||
             currentState.hangupActionNeedsResponse != savedSettings.hangupActionNeedsResponse
+    }
+
+    fun hasUnsavedChanges(): Boolean {
+        val state = _uiState.value
+        if (!state.isLoaded) return false
+        val saved = savedSettings
+        val savedInstantAudio = saved.instantTwoWayAudio && !saved.streamButtonLayout.hasQuickReply
+        return normalizeHomeAssistantUrl(state.url) != normalizeHomeAssistantUrl(saved.url) ||
+            state.token.trim() != saved.token.trim() ||
+            state.streamSource != saved.streamSource ||
+            state.instantTwoWayAudio != savedInstantAudio ||
+            state.webrtcProvider != saved.webrtcProvider ||
+            state.streamButtonLayout != saved.streamButtonLayout ||
+            callActionsChanged()
     }
 
     fun protectedButtonsChanged(): Boolean {

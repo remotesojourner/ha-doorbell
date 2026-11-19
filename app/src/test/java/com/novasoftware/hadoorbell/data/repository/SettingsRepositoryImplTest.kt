@@ -144,6 +144,28 @@ class SettingsRepositoryImplTest {
     }
 
     @Test
+    fun `saved layouts keep the sound and call positions`() = runTest {
+        val chime = StreamButton("chime", StreamButtonAction.CallService("button", "press", "button.chime"))
+        val layout = StreamButtonLayout(bottom = listOf(chime), soundPosition = 2, callPosition = 0)
+
+        appPreferences.saveSettings(source = "camera", streamButtonLayout = layout)
+
+        assertEquals(layout, appPreferences.streamButtonLayoutFlow.first())
+    }
+
+    @Test
+    fun `layouts saved before controls were reorderable keep sound and call first`() {
+        val json = """{"buttonVisibility":true,"top":[],"bottom":[{"id":"chime","requiresAuthentication":false,""" +
+            """"visible":true,"action":{"type":"callService","entityId":"button.chime","domain":"button","service":"press"}}]}"""
+
+        val layout = StreamButtonLayoutJson.decode(json)
+
+        assertEquals(StreamButtonLayout.DEFAULT_SOUND_POSITION, layout?.soundPosition)
+        assertEquals(StreamButtonLayout.DEFAULT_CALL_POSITION, layout?.callPosition)
+        assertEquals("chime", layout?.bottom?.single()?.id)
+    }
+
+    @Test
     fun `deleting all buttons persists empty rows`() = runTest {
         val button = StreamButton("chime", StreamButtonAction.CallService("button", "press", "button.chime"))
         appPreferences.saveSettings(

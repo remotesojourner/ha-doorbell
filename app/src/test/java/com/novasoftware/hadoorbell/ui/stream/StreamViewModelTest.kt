@@ -731,6 +731,9 @@ class StreamViewModelTest {
         every { appPreferences.callActionsFlow } returns flowOf(CallActions(answer = intercomCallActions().answer))
         coEvery { repository.callService("switch", "turn_on", "switch.doorbell_talk") } returns
             Result.failure(RuntimeException("service unavailable"))
+        every { context.getString(R.string.stream_call_action_answer) } returns "Answer"
+        every { context.getString(R.string.stream_call_action_failed, "Answer", "service unavailable") } returns
+            "Answer action failed: service unavailable"
 
         val events = mutableListOf<UiEvent>()
         val collector = launch(UnconfinedTestDispatcher(testScheduler)) {
@@ -747,13 +750,14 @@ class StreamViewModelTest {
         advanceUntilIdle()
         collector.cancel()
 
-        assertTrue(events.any { it is UiEvent.ShowToast && it.message.contains("Answer action failed") })
+        assertTrue(events.any { it is UiEvent.ShowMessage && it.message.contains("Answer action failed") })
     }
 
     @Test
     fun `a call that never connects is cancelled and disconnected after the timeout`() = runTest {
         val pendingConnection = Job()
         every { webRtcManager.startConnection(any(), any(), any()) } returns pendingConnection
+        every { context.getString(R.string.stream_call_setup_no_connection) } returns "Call setup failed: no connection"
 
         val events = mutableListOf<UiEvent>()
         val collector = launch(UnconfinedTestDispatcher(testScheduler)) {
@@ -777,7 +781,7 @@ class StreamViewModelTest {
         verify(atLeast = 1) { webRtcManager.disconnect() }
         assertFalse(viewModel.uiState.value.isMicEnabled)
         coVerify(exactly = 0) { repository.callService(any(), any(), any()) }
-        assertTrue(events.any { it is UiEvent.ShowToast && it.message.contains("no connection") })
+        assertTrue(events.any { it is UiEvent.ShowMessage && it.message.contains("no connection") })
         collector.cancel()
     }
 
@@ -881,6 +885,99 @@ class StreamViewModelTest {
         viewModel.onStreamButtonAuthentication(request, true)
         advanceUntilIdle()
 
-        assertTrue(events.contains(UiEvent.ShowToast("Side door failed: relay offline", long = true)))
+        assertTrue(events.contains(UiEvent.ShowMessage("Side door failed: relay offline", long = true)))
+    }
+
+    @Test
+    fun `an action is reported as running until Home Assistant responds`() = runTest {
+        val chime = StreamButton("chime", StreamButtonAction.CallService("button", "press", "button.chime"))
+        every { appPreferences.streamButtonLayoutFlow } returns flowOf(StreamButtonLayout(bottom = listOf(chime)))
+        val response = CompletableDeferred<Result<Unit>>()
+        coEvery { repository.callService("button", "press", "button.chime", JsonObject(), false) } coAnswers {
+            response.await()
+        }
+
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+        viewModel.handleStreamButton(chime)
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.isRunning(chime))
+        assertFalse(viewModel.uiState.value.canRun(chime))
+        response.complete(Result.success(Unit))
+        runCurrent()
+        assertFalse(viewModel.uiState.value.isRunning(chime))
+    }
+
+    @Test
+    fun `retry replaces a failed stream connection`() = runTest {
+        val failedManager = mockk<WebRtcManager>(relaxed = true) {
+            every { disconnect() } returns Job().apply { complete() }
+            every { startConnection(any(), any(), any()) } answers {
+                thirdArg<(String) -> Unit>().invoke("ICE failed")
+                Job().apply { complete() }
+            }
+        }
+        val freshManager = mockk<WebRtcManager>(relaxed = true)
+        every { webRtcManagerFactory.create(any(), any(), any()) } returnsMany listOf(failedManager, freshManager)
+
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+        viewModel.startStream(videoSink)
+        assertEquals("ICE failed", viewModel.uiState.value.errorMessage)
+        assertFalse(viewModel.uiState.value.isStreamAvailable)
+
+        viewModel.retryConnection(context)
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.uiState.value.errorMessage)
+        assertEquals(freshManager, viewModel.uiState.value.webRtcManager)
+        verify { failedManager.disconnect() }
+    }
+
+    @Test
+    fun `answering from a launch link starts with the microphone and runs the answer action`() = runTest {
+        every { appPreferences.callActionsFlow } returns flowOf(CallActions(answer = intercomCallActions().answer))
+        every { webRtcManager.startConnection(any(), any(), any()) } returns Job().apply { complete() }
+
+        viewModel.answerWhenReady(context)
+        viewModel.initializeConnection(context)
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isMicEnabled)
+
+        viewModel.startStream(videoSink)
+        advanceUntilIdle()
+
+        verify(exactly = 1) { webRtcManagerFactory.create(any(), any(), any()) }
+        verify { webRtcManager.startConnection(any(), true, any()) }
+        coVerify(exactly = 1) { repository.callService("switch", "turn_on", "switch.doorbell_talk") }
+    }
+
+    @Test
+    fun `a launch link while streaming answers the open stream`() = runTest {
+        every { webRtcManager.startConnection(any(), any(), any()) } returns Job().apply { complete() }
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+        viewModel.startStream(videoSink)
+        assertFalse(viewModel.uiState.value.isMicEnabled)
+
+        viewModel.answerWhenReady(context)
+        advanceTimeBy(200)
+        runCurrent()
+        viewModel.startStream(videoSink)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isMicEnabled)
+        verify { webRtcManager.startConnection(any(), true, any()) }
+    }
+
+    @Test
+    fun `leaving the stream drops a pending launch answer`() = runTest {
+        viewModel.answerWhenReady(context)
+        viewModel.teardownConnection()
+        viewModel.initializeConnection(context)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isMicEnabled)
     }
 }

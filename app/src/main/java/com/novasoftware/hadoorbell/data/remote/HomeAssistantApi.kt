@@ -3,6 +3,7 @@ package com.novasoftware.hadoorbell.data.remote
 import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 import okhttp3.HttpUrl
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
@@ -52,6 +53,16 @@ interface HomeAssistantApi {
         @Header("Authorization") authorization: String,
         @Tag connection: ExplicitHomeAssistantConnection
     ): List<ServiceDomainResponse>
+
+    @GET
+    suspend fun getJsonObject(
+        @Url url: HttpUrl,
+        @Header("Authorization") authorization: String,
+        @Tag connection: ExplicitHomeAssistantConnection
+    ): JsonObject
+
+    @GET
+    suspend fun download(@Url path: String): ResponseBody
 
     @GET("api/states/{entity_id}")
     suspend fun getEntityState(

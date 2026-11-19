@@ -11,6 +11,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+/** The Frigate integration's default instance ID, which is Frigate's MQTT client ID. */
+internal const val FRIGATE_INSTANCE_ID = "frigate"
+
 class HomeAssistantWebRtcClient(
     private val haUrl: String,
     private val token: String,
@@ -47,7 +50,7 @@ class HomeAssistantWebRtcClient(
                         val path = if (provider == "webrtc") {
                             "/api/webrtc/ws?url=$streamName"
                         } else {
-                            "/api/frigate/frigate/mse/api/ws?src=$streamName"
+                            "/api/frigate/$FRIGATE_INSTANCE_ID/mse/api/ws?src=$streamName"
                         }
                         val signMsg = mapOf(
                             "id" to 1,

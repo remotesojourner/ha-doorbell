@@ -34,12 +34,47 @@ private val streamButtonColorHex = Regex("[0-9a-fA-F]{6}([0-9a-fA-F]{2})?")
 fun normalizeStreamButtonColor(value: String): String? =
     value.trim().removePrefix("#").takeIf(streamButtonColorHex::matches)?.let { "#${it.uppercase()}" }
 
+enum class StreamControl { SOUND, CALL }
+
+sealed interface StreamBottomItem {
+    data class Control(val control: StreamControl) : StreamBottomItem
+    data class Custom(val button: StreamButton) : StreamBottomItem
+}
+
 data class StreamButtonLayout(
     val top: List<StreamButton> = emptyList(),
-    val bottom: List<StreamButton> = emptyList()
+    val bottom: List<StreamButton> = emptyList(),
+    val soundPosition: Int = DEFAULT_SOUND_POSITION,
+    val callPosition: Int = DEFAULT_CALL_POSITION
 ) {
     val buttons: List<StreamButton> get() = top + bottom
     val hasQuickReply: Boolean get() = buttons.any { it.visible && it.action is StreamButtonAction.QuickReply }
+
+    /** The bottom row in display order, with Sound and Call placed among the custom buttons. */
+    val bottomItems: List<StreamBottomItem>
+        get() {
+            val items = bottom.mapTo(mutableListOf<StreamBottomItem>(), StreamBottomItem::Custom)
+            StreamControl.entries.sortedBy(::position).forEach { control ->
+                items.add(position(control).coerceAtMost(items.size), StreamBottomItem.Control(control))
+            }
+            return items
+        }
+
+    fun position(control: StreamControl): Int = when (control) {
+        StreamControl.SOUND -> soundPosition
+        StreamControl.CALL -> callPosition
+    }
+
+    fun withBottomItems(items: List<StreamBottomItem>): StreamButtonLayout {
+        fun indexOf(control: StreamControl) = items.indexOf(StreamBottomItem.Control(control)).also {
+            require(it >= 0) { "The bottom row must contain the $control control" }
+        }
+        return copy(
+            bottom = items.filterIsInstance<StreamBottomItem.Custom>().map(StreamBottomItem.Custom::button),
+            soundPosition = indexOf(StreamControl.SOUND),
+            callPosition = indexOf(StreamControl.CALL)
+        )
+    }
 
     init {
         require(top.size <= MAX_BUTTONS_PER_ROW && bottom.size <= MAX_BUTTONS_PER_ROW) {
@@ -49,10 +84,15 @@ data class StreamButtonLayout(
         require(ids.none(String::isBlank) && ids.size == ids.toSet().size) {
             "Stream button IDs must be nonblank and unique"
         }
+        require(soundPosition >= 0 && callPosition >= 0 && soundPosition != callPosition) {
+            "Sound and Call need distinct, nonnegative positions"
+        }
     }
 
     companion object {
         const val MAX_BUTTONS_PER_ROW = 3
+        const val DEFAULT_SOUND_POSITION = 0
+        const val DEFAULT_CALL_POSITION = 1
     }
 }
 

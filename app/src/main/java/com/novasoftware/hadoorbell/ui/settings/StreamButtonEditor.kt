@@ -6,28 +6,26 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Widgets
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -35,13 +33,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -52,8 +53,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -68,9 +71,11 @@ import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
 import com.novasoftware.hadoorbell.domain.model.LockState
+import com.novasoftware.hadoorbell.domain.model.StreamBottomItem
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
+import com.novasoftware.hadoorbell.domain.model.StreamControl
 import com.novasoftware.hadoorbell.domain.model.isHomeAssistantEventType
 import com.novasoftware.hadoorbell.domain.model.isHomeAssistantServicePart
 import com.novasoftware.hadoorbell.ui.icons.StreamButtonIcon
@@ -122,66 +127,63 @@ internal fun StreamButtonEditor(
     }
 
     ButtonRow.entries.forEach { row ->
+        val items = row.items(layout)
         val buttons = row.buttons(layout)
         val otherRow = if (row == ButtonRow.TOP) ButtonRow.BOTTOM else ButtonRow.TOP
-        val otherButtons = otherRow.buttons(layout)
+        fun moveItem(index: Int, offset: Int): (() -> Unit)? = (index + offset).takeIf { it in items.indices }?.let { target ->
+            { onLayoutChange(row.replaceItems(layout, items.move(index, target))) }
+        }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 text = stringResource(row.title),
                 style = MaterialTheme.typography.titleSmall
             )
-            if (row == ButtonRow.BOTTOM) {
-                FixedButton(
-                    label = stringResource(R.string.stream_button_sound),
-                    icon = Icons.AutoMirrored.Filled.VolumeUp
-                )
-                FixedButton(
-                    label = stringResource(R.string.stream_button_call),
-                    icon = Icons.Default.Call,
-                    onEdit = onEditCall,
-                    enabled = enabled
-                )
-            }
-            buttons.forEachIndexed { index, button ->
-                key(button.id) {
-                    StreamButtonListItem(
-                        button = button,
-                        iconEntityName = entities.find { it.entityId == button.iconEntityId }?.name,
-                        appearance = resolveAppearance(button.iconEntityId),
-                        lockState = if (button.action is StreamButtonAction.DoorLock) {
-                            LockState.fromString(resolveAppearance(button.action.entityId)?.state)
-                        } else {
-                            LockState.Unknown
-                        },
-                        enabled = enabled,
-                        onEdit = {
-                            editingRow = row
-                            editingId = button.id
-                            if (entities.isEmpty() && button.iconEntityId.isNotBlank() && button.icon.isNullOrBlank()) {
-                                onLoadEntities()
-                            }
-                        },
-                        onMoveUp = if (index > 0) {
-                            { onLayoutChange(row.replace(layout, buttons.move(index, index - 1))) }
-                        } else null,
-                        onMoveDown = if (index < buttons.lastIndex) {
-                            { onLayoutChange(row.replace(layout, buttons.move(index, index + 1))) }
-                        } else null,
-                        moveToOtherRowLabel = stringResource(otherRow.moveHere),
-                        onMoveToOtherRow = if (otherButtons.size < StreamButtonLayout.MAX_BUTTONS_PER_ROW) {
-                            {
-                                val updated = row.replace(layout, buttons - button)
-                                onLayoutChange(otherRow.replace(updated, otherButtons + button))
-                            }
-                        } else null,
-                        onToggleVisibility = {
-                            val updated = buttons.map {
-                                if (it.id == button.id) it.copy(visible = !it.visible) else it
-                            }
-                            onLayoutChange(row.replace(layout, updated))
-                        },
-                        onRemove = { onLayoutChange(row.replace(layout, buttons - button)) }
-                    )
+            items.forEachIndexed { index, item ->
+                when (item) {
+                    is StreamBottomItem.Control -> key(item.control) {
+                        FixedControlListItem(
+                            control = item.control,
+                            enabled = enabled,
+                            onEdit = onEditCall.takeIf { item.control == StreamControl.CALL },
+                            onMoveUp = moveItem(index, -1),
+                            onMoveDown = moveItem(index, 1)
+                        )
+                    }
+                    is StreamBottomItem.Custom -> key(item.button.id) {
+                        val button = item.button
+                        StreamButtonListItem(
+                            button = button,
+                            iconEntityName = entities.find { it.entityId == button.iconEntityId }?.name,
+                            appearance = resolveAppearance(button.iconEntityId),
+                            lockState = if (button.action is StreamButtonAction.DoorLock) {
+                                LockState.fromString(resolveAppearance(button.action.entityId)?.state)
+                            } else {
+                                LockState.Unknown
+                            },
+                            enabled = enabled,
+                            onEdit = {
+                                editingRow = row
+                                editingId = button.id
+                                if (entities.isEmpty() && button.iconEntityId.isNotBlank() && button.icon.isNullOrBlank()) {
+                                    onLoadEntities()
+                                }
+                            },
+                            onMoveUp = moveItem(index, -1),
+                            onMoveDown = moveItem(index, 1),
+                            moveToOtherRowLabel = stringResource(otherRow.moveHere),
+                            onMoveToOtherRow = if (otherRow.buttons(layout).size < StreamButtonLayout.MAX_BUTTONS_PER_ROW) {
+                                {
+                                    val updated = row.replaceItems(layout, items - item)
+                                    onLayoutChange(otherRow.replaceItems(updated, otherRow.items(updated) + item))
+                                }
+                            } else null,
+                            onToggleVisibility = {
+                                val toggled = StreamBottomItem.Custom(button.copy(visible = !button.visible))
+                                onLayoutChange(row.replaceItems(layout, items.map { if (it == item) toggled else it }))
+                            },
+                            onRemove = { onLayoutChange(row.replaceItems(layout, items - item)) }
+                        )
+                    }
                 }
             }
             if (buttons.size < StreamButtonLayout.MAX_BUTTONS_PER_ROW) {
@@ -206,7 +208,7 @@ internal fun StreamButtonEditor(
             editingId = null
             draftEntityIds = emptySet()
         }
-        EditStreamButtonDialog(
+        EditStreamButtonScreen(
             existing = existing,
             entities = entities,
             isLoadingEntities = isLoadingEntities,
@@ -220,11 +222,13 @@ internal fun StreamButtonEditor(
             onObserveDraft = { draftEntityIds = it },
             onDismiss = dismiss,
             onSave = { button ->
-                val buttons = row.buttons(layout)
-                val updated = if (existing == null) buttons + button else buttons.map {
-                    if (it.id == button.id) button else it
+                val items = row.items(layout)
+                val updated = if (existing == null) {
+                    items + StreamBottomItem.Custom(button)
+                } else {
+                    items.map { if (it is StreamBottomItem.Custom && it.button.id == button.id) StreamBottomItem.Custom(button) else it }
                 }
-                onLayoutChange(row.replace(layout, updated))
+                onLayoutChange(row.replaceItems(layout, updated))
                 dismiss()
             }
         )
@@ -232,24 +236,77 @@ internal fun StreamButtonEditor(
 }
 
 @Composable
-private fun FixedButton(
-    label: String,
-    icon: ImageVector,
-    onEdit: (() -> Unit)? = null,
-    enabled: Boolean = true
+private fun EditorListRow(
+    enabled: Boolean,
+    onClick: (() -> Unit)?,
+    onClickLabel: String?,
+    leading: @Composable () -> Unit,
+    headline: @Composable () -> Unit,
+    supporting: (@Composable () -> Unit)? = null,
+    trailing: @Composable RowScope.() -> Unit
 ) {
-    val editLabel = stringResource(R.string.stream_button_edit_call)
-    ListItem(
-        headlineContent = { Text(label) },
-        leadingContent = { Icon(icon, contentDescription = null) },
-        trailingContent = if (onEdit != null) {
-            { Icon(Icons.Default.Edit, contentDescription = null) }
-        } else null,
-        modifier = if (onEdit != null) {
-            Modifier.clickable(enabled = enabled, onClickLabel = editLabel, onClick = onEdit)
-        } else Modifier,
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(enabled = enabled, onClickLabel = onClickLabel, onClick = onClick)
+                } else Modifier
+            )
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.width(40.dp), contentAlignment = Alignment.CenterStart) { leading() }
+        Column(Modifier.weight(1f).padding(end = 4.dp)) {
+            ProvideTextStyle(MaterialTheme.typography.bodyLarge) { headline() }
+            if (supporting != null) {
+                CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurfaceVariant) {
+                    ProvideTextStyle(MaterialTheme.typography.bodyMedium) { supporting() }
+                }
+            }
+        }
+        trailing()
+    }
+}
+
+@Composable
+private fun RowScope.ReorderButtons(name: String, enabled: Boolean, onMoveUp: (() -> Unit)?, onMoveDown: (() -> Unit)?) {
+    IconButton(enabled = enabled && onMoveUp != null, onClick = { onMoveUp?.invoke() }) {
+        Icon(
+            Icons.Default.KeyboardArrowUp,
+            contentDescription = stringResource(R.string.stream_button_move_up, name)
+        )
+    }
+    IconButton(enabled = enabled && onMoveDown != null, onClick = { onMoveDown?.invoke() }) {
+        Icon(
+            Icons.Default.KeyboardArrowDown,
+            contentDescription = stringResource(R.string.stream_button_move_down, name)
+        )
+    }
+}
+
+@Composable
+private fun FixedControlListItem(
+    control: StreamControl,
+    enabled: Boolean,
+    onEdit: (() -> Unit)?,
+    onMoveUp: (() -> Unit)?,
+    onMoveDown: (() -> Unit)?
+) {
+    val label = stringResource(if (control == StreamControl.CALL) R.string.stream_button_call else R.string.stream_button_sound)
+    val icon = if (control == StreamControl.CALL) Icons.Default.Call else Icons.AutoMirrored.Filled.VolumeUp
+    EditorListRow(
+        enabled = enabled,
+        onClick = onEdit,
+        onClickLabel = stringResource(R.string.stream_button_edit_call),
+        leading = { Icon(icon, contentDescription = null) },
+        headline = { Text(label) }
+    ) {
+        ReorderButtons(label, enabled, onMoveUp, onMoveDown)
+        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+            if (onEdit != null) Icon(Icons.Default.Edit, contentDescription = null)
+        }
+    }
 }
 
 @Composable
@@ -280,13 +337,30 @@ private fun StreamButtonListItem(
     val actionSummary = details?.let { stringResource(R.string.stream_button_action_summary, actionLabel, it) }
         ?: actionLabel
     val icon = resolveStreamButtonIcon(button, appearance)
-    ListItem(
-        headlineContent = {
+    EditorListRow(
+        enabled = enabled,
+        onClick = onEdit,
+        onClickLabel = stringResource(R.string.stream_button_edit),
+        leading = {
+            Box(Modifier.alpha(if (button.visible) 1f else 0.6f)) {
+                if (icon == null) {
+                    Icon(streamButtonFallbackIcon(button.action, lockState), contentDescription = null)
+                } else {
+                    StreamButtonIcon(icon, contentDescription = null)
+                }
+            }
+        },
+        headline = {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(button.displayName, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    button.displayName,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
                 if (button.requiresAuthentication || button.action is StreamButtonAction.DoorLock ||
                     (button.action as? StreamButtonAction.CallService)?.doorRelease == true
                 ) {
@@ -298,13 +372,9 @@ private fun StreamButtonListItem(
                 }
             }
         },
-        supportingContent = {
+        supporting = {
             Column {
-                Text(
-                    actionSummary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Text(actionSummary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 button.stateEntityId?.takeIf(String::isNotBlank)?.let { entityId ->
                     val name = iconEntityName ?: entityId
                     val state = appearance?.state?.takeIf(String::isNotBlank)
@@ -316,79 +386,50 @@ private fun StreamButtonListItem(
                 }
                 if (!button.visible) Text(stringResource(R.string.stream_button_hidden))
             }
-        },
-        leadingContent = {
-            if (icon == null) {
-                Icon(streamButtonFallbackIcon(button.action, lockState), contentDescription = null)
-            } else {
-                StreamButtonIcon(icon, contentDescription = null)
+        }
+    ) {
+        ReorderButtons(button.displayName, enabled, onMoveUp, onMoveDown)
+        Box {
+            IconButton(enabled = enabled, onClick = { menuOpen = true }) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = stringResource(R.string.stream_button_menu, button.displayName)
+                )
             }
-        },
-        trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column {
-                    IconButton(enabled = enabled && onMoveUp != null, onClick = { onMoveUp?.invoke() }) {
-                        Icon(
-                            Icons.Default.KeyboardArrowUp,
-                            contentDescription = stringResource(R.string.stream_button_move_up, button.displayName)
-                        )
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text(moveToOtherRowLabel) },
+                    enabled = onMoveToOtherRow != null,
+                    onClick = {
+                        menuOpen = false
+                        onMoveToOtherRow?.invoke()
                     }
-                    IconButton(enabled = enabled && onMoveDown != null, onClick = { onMoveDown?.invoke() }) {
-                        Icon(
-                            Icons.Default.KeyboardArrowDown,
-                            contentDescription = stringResource(R.string.stream_button_move_down, button.displayName)
-                        )
+                )
+                DropdownMenuItem(
+                    text = {
+                        Text(stringResource(
+                            if (button.visible) R.string.stream_button_hide else R.string.stream_button_show
+                        ))
+                    },
+                    onClick = {
+                        menuOpen = false
+                        onToggleVisibility()
                     }
-                }
-                Box {
-                    IconButton(enabled = enabled, onClick = { menuOpen = true }) {
-                        Icon(
-                            Icons.Default.MoreVert,
-                            contentDescription = stringResource(R.string.stream_button_menu, button.displayName)
-                        )
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.stream_button_remove)) },
+                    onClick = {
+                        menuOpen = false
+                        onRemove()
                     }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text(moveToOtherRowLabel) },
-                            enabled = onMoveToOtherRow != null,
-                            onClick = {
-                                menuOpen = false
-                                onMoveToOtherRow?.invoke()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Text(stringResource(
-                                    if (button.visible) R.string.stream_button_hide else R.string.stream_button_show
-                                ))
-                            },
-                            onClick = {
-                                menuOpen = false
-                                onToggleVisibility()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.stream_button_remove)) },
-                            onClick = {
-                                menuOpen = false
-                                onRemove()
-                            }
-                        )
-                    }
-                }
+                )
             }
-        },
-        modifier = Modifier.clickable(
-            enabled = enabled,
-            onClickLabel = stringResource(R.string.stream_button_edit),
-            onClick = onEdit
-        ),
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
+        }
+    }
 }
 
 @Composable
-private fun EditStreamButtonDialog(
+private fun EditStreamButtonScreen(
     existing: StreamButton?,
     entities: List<HomeAssistantEntity>,
     isLoadingEntities: Boolean,
@@ -440,6 +481,13 @@ private fun EditStreamButtonDialog(
     var icon by rememberSaveable { mutableStateOf(existing?.icon) }
     var cachedEntityName by rememberSaveable { mutableStateOf(existing?.entityName) }
     var picker by rememberSaveable { mutableStateOf<EditorPicker?>(null) }
+    var showAdvanced by rememberSaveable { mutableStateOf(jsonText.isNotBlank()) }
+    var confirmDiscard by rememberSaveable { mutableStateOf(false) }
+    val draft = listOf(
+        kind, entityId, stateEntityId, stateColors, serviceId, eventType, skipConditions, option, jsonText,
+        requiresAuthentication, icon
+    ).toString()
+    val initialDraft = rememberSaveable { draft }
     val entity = entities.find { it.entityId == entityId }
     val iconEntityId = stateEntityId?.takeIf(String::isNotBlank) ?: entityId.orEmpty()
     val iconEntity = entities.find { it.entityId == iconEntityId }
@@ -451,6 +499,9 @@ private fun EditStreamButtonDialog(
     val selectedService = services.find { serviceId(it) == service }
     val isService = kind == ActionKind.CALL_SERVICE
     val isLockAction = kind == ActionKind.DOOR_LOCK
+    LaunchedEffect(Unit) {
+        if (savedService != null && services.isEmpty()) onLoadServices()
+    }
     SideEffect {
         onObserveDraft(buildSet {
             if (iconEntityId.isNotBlank()) add(iconEntityId)
@@ -465,6 +516,10 @@ private fun EditStreamButtonDialog(
     val data = remember(jsonText, hasJsonData) {
         if (hasJsonData) parseJsonObject(jsonText) else JsonObject()
     }
+    val dataFields = if (isService) {
+        selectedService?.fields.orEmpty().filterKeys { it != "entity_id" && (!selectOption || it != "option") }
+    } else emptyMap()
+    val hasRequiredFields = dataFields.values.any { it.required }
     val trimmedEvent = eventType.trim()
     val target = entityId.orEmpty()
     val action = when (kind) {
@@ -505,335 +560,293 @@ private fun EditStreamButtonDialog(
         option = null
         cachedEntityName = null
     }
-
-    when (picker) {
-        EditorPicker.ENTITY -> {
-            HomeAssistantEntityPicker(
-                entities = filterEntitiesByDomain(entities, targetDomains),
-                isLoading = isLoadingEntities,
-                loadError = entityLoadError,
-                onRetry = onLoadEntities,
-                onDismiss = { picker = null },
-                selectedEntityId = entityId,
-                onSelect = { selected ->
-                    if (entityId != selected.entityId) option = null
-                    entityId = selected.entityId
-                    cachedEntityName = selected.name.takeIf(String::isNotBlank)
-                    picker = null
-                }
-            )
-            return
-        }
-        EditorPicker.STATE_ENTITY -> {
-            HomeAssistantEntityPicker(
-                entities = entities,
-                isLoading = isLoadingEntities,
-                loadError = entityLoadError,
-                onRetry = onLoadEntities,
-                onDismiss = { picker = null },
-                selectedEntityId = stateEntityId,
-                title = R.string.stream_button_choose_state_entity,
-                onSelect = { selected ->
-                    if (stateEntityId != selected.entityId) stateColors = emptyMap()
-                    stateEntityId = selected.entityId
-                    picker = null
-                }
-            )
-            return
-        }
-        EditorPicker.STATE_COLORS -> {
-            StateColorEditor(
-                entityId = stateEntityId.orEmpty(),
-                currentState = appearance?.state,
-                entityOptions = iconEntity?.options.orEmpty(),
-                stateColors = stateColors,
-                onChange = { stateColors = it },
-                onDismiss = { picker = null }
-            )
-            return
-        }
-        EditorPicker.ICON -> {
-            StreamButtonIconPicker(
-                icon = icon,
-                automaticIcon = automaticIcon,
-                automaticFallback = fallbackIcon,
-                onDismiss = { picker = null },
-                onSelect = {
-                    icon = it
-                    picker = null
-                }
-            )
-            return
-        }
-        EditorPicker.SERVICE -> {
-            HomeAssistantServicePicker(
-                services = services,
-                isLoading = isLoadingServices,
-                loadError = serviceLoadError,
-                onRetry = onLoadServices,
-                onDismiss = { picker = null },
-                serviceId = service,
-                onSelect = { nextService ->
-                    if (nextService != service) {
-                        val descriptor = services.find { serviceId(it) == nextService }
-                        val nextDomains = serviceTargetDomains(nextService, descriptor)
-                        if (nextDomains.isNotEmpty() && entityId?.substringBefore('.') !in nextDomains) {
-                            clearEntity()
-                        }
-                        option = null
-                        jsonText = ""
-                    }
-                    serviceId = nextService
-                    picker = null
-                }
-            )
-            return
-        }
-        EditorPicker.OPTION -> {
-            SelectOptionPicker(
-                options = entity?.options.orEmpty(),
-                selectedOption = option,
-                onDismiss = { picker = null },
-                onSelect = {
-                    option = it
-                    picker = null
-                }
-            )
-            return
-        }
-        null -> Unit
+    fun requestClose() {
+        if (draft != initialDraft) confirmDiscard = true else onDismiss()
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(stringResource(if (existing == null) R.string.stream_button_add else R.string.stream_button_edit))
-        },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                EditorChoice(
-                    label = stringResource(R.string.stream_button_action),
-                    displayValue = stringResource(kind.label),
-                    choices = listOf(kind) + ActionKind.entries.filterNot { it == kind },
-                    selectedChoice = kind,
-                    choiceLabel = { stringResource(it.label) },
-                    onSelect = { nextKind ->
-                        if (nextKind != kind) {
-                            kind = nextKind
-                            if (nextKind != ActionKind.DOOR_LOCK ||
-                                entityId?.substringBefore('.') !in StreamButtonAction.LOCK_DOMAINS
-                            ) {
-                                clearEntity()
-                                if (nextKind == ActionKind.DOOR_LOCK && savedAction is StreamButtonAction.DoorLock) {
-                                    entityId = savedAction.entityId
-                                    cachedEntityName = existing.entityName
-                                }
-                            }
-                            jsonText = ""
-                            if (nextKind == ActionKind.CALL_SERVICE) {
-                                serviceId = ""
+    FullScreenEditor(
+        title = stringResource(if (existing == null) R.string.stream_button_add else R.string.stream_button_edit),
+        onClose = ::requestClose,
+        confirmLabel = stringResource(R.string.stream_button_done),
+        confirmEnabled = action != null,
+        onConfirm = {
+            if (action != null) {
+                onSave(
+                    StreamButton(
+                        id = existing?.id ?: UUID.randomUUID().toString(),
+                        action = action,
+                        requiresAuthentication = isLockAction || isDoorRelease || requiresAuthentication,
+                        visible = existing?.visible ?: true,
+                        icon = icon,
+                        entityIcon = currentEntityIcon,
+                        entityName = currentEntityName,
+                        stateEntityId = stateEntityId,
+                        stateColors = stateColors
+                    )
+                )
+            }
+        }
+    ) {
+        EditorSection(stringResource(R.string.stream_button_section_behavior)) {
+            ChoiceField(
+                label = stringResource(R.string.stream_button_action),
+                choices = listOf(kind) + ActionKind.entries.filterNot { it == kind },
+                selectedChoice = kind,
+                choiceLabel = { stringResource(it.label) },
+                onSelect = { nextKind ->
+                    if (nextKind != kind) {
+                        kind = nextKind
+                        if (nextKind != ActionKind.DOOR_LOCK ||
+                            entityId?.substringBefore('.') !in StreamButtonAction.LOCK_DOMAINS
+                        ) {
+                            clearEntity()
+                            if (nextKind == ActionKind.DOOR_LOCK && savedAction is StreamButtonAction.DoorLock) {
+                                entityId = savedAction.entityId
+                                cachedEntityName = existing.entityName
                             }
                         }
+                        jsonText = ""
+                        if (nextKind == ActionKind.CALL_SERVICE) {
+                            serviceId = ""
+                        }
+                    }
+                }
+            )
+
+            if (isService) {
+                PickerField(
+                    label = stringResource(R.string.stream_button_service),
+                    value = service.ifBlank { stringResource(R.string.stream_button_choose_service) },
+                    isPlaceholder = service.isBlank(),
+                    onClick = {
+                        onLoadServices()
+                        picker = EditorPicker.SERVICE
                     }
                 )
-
-                if (isService) {
-                    EditorPickerButton(
-                        label = stringResource(R.string.stream_button_service),
-                        value = service.ifBlank { stringResource(R.string.stream_button_choose_service) },
-                        onClick = {
-                            onLoadServices()
-                            picker = EditorPicker.SERVICE
-                        }
-                    )
-                    selectedService?.description?.takeIf(String::isNotBlank)?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall)
-                    }
+                selectedService?.description?.takeIf(String::isNotBlank)?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
 
-                if (kind != ActionKind.FIRE_EVENT && (!isService || service.isNotBlank())) {
-                    EditorPickerButton(
-                        label = stringResource(
-                            if (optionalTarget) R.string.stream_button_optional_target else R.string.stream_button_entity
-                        ),
-                        value = currentEntityName ?: entityId ?: stringResource(R.string.stream_button_choose_entity),
-                        onClick = {
-                            onLoadEntities()
-                            picker = EditorPicker.ENTITY
-                        }
-                    )
-                    if (optionalTarget && entityId != null) {
-                        TextButton(onClick = ::clearEntity) {
-                            Text(stringResource(R.string.stream_button_clear_target))
-                        }
-                    }
-                }
+            if (kind != ActionKind.FIRE_EVENT && (!isService || service.isNotBlank())) {
+                PickerField(
+                    label = stringResource(
+                        if (optionalTarget) R.string.stream_button_optional_target else R.string.stream_button_entity
+                    ),
+                    value = currentEntityName ?: entityId ?: stringResource(R.string.stream_button_choose_entity),
+                    isPlaceholder = entityId == null,
+                    onClick = {
+                        onLoadEntities()
+                        picker = EditorPicker.ENTITY
+                    },
+                    clearLabel = stringResource(R.string.stream_button_clear_target),
+                    onClear = if (optionalTarget && entityId != null) ::clearEntity else null
+                )
+            }
 
-                if (selectOption && entityId != null) {
-                    SelectOptionField(
-                        entity = entity,
-                        option = option,
-                        isLoading = isLoadingEntities,
-                        loadError = entityLoadError,
-                        onLoad = onLoadEntities,
-                        onOpen = { picker = EditorPicker.OPTION }
-                    )
-                }
+            if (selectOption && entityId != null) {
+                SelectOptionField(
+                    entity = entity,
+                    option = option,
+                    isLoading = isLoadingEntities,
+                    loadError = entityLoadError,
+                    onLoad = onLoadEntities,
+                    onOpen = { picker = EditorPicker.OPTION }
+                )
+            }
 
-                if (kind == ActionKind.TRIGGER_AUTOMATION) {
-                    EditorSwitch(
-                        text = stringResource(R.string.stream_button_skip_conditions),
-                        checked = skipConditions,
-                        onCheckedChange = { skipConditions = it }
-                    )
-                }
+            if (kind == ActionKind.TRIGGER_AUTOMATION) {
+                EditorSwitch(
+                    text = stringResource(R.string.stream_button_skip_conditions),
+                    checked = skipConditions,
+                    onCheckedChange = { skipConditions = it }
+                )
+            }
 
-                if (kind == ActionKind.FIRE_EVENT) {
-                    OutlinedTextField(
-                        value = eventType,
-                        onValueChange = { eventType = it },
-                        label = { Text(stringResource(R.string.stream_button_event_name)) },
-                        supportingText = { Text(stringResource(R.string.stream_button_event_admin)) },
-                        isError = eventType.isNotBlank() && !isHomeAssistantEventType(trimmedEvent),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                }
+            if (kind == ActionKind.FIRE_EVENT) {
+                OutlinedTextField(
+                    value = eventType,
+                    onValueChange = { eventType = it },
+                    label = { Text(stringResource(R.string.stream_button_event_name)) },
+                    supportingText = { Text(stringResource(R.string.stream_button_event_admin)) },
+                    isError = eventType.isNotBlank() && !isHomeAssistantEventType(trimmedEvent),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
 
-                if (hasJsonData) {
+            if (hasJsonData) {
+                if (showAdvanced || hasRequiredFields || data == null) {
                     ServiceDataField(
                         value = jsonText,
                         onValueChange = { jsonText = it },
                         isError = data == null,
                         label = if (kind == ActionKind.RUN_SCRIPT) R.string.stream_button_script_variables
                             else R.string.stream_button_action_data,
-                        availableFields = if (isService) selectedService?.fields.orEmpty().keys.filterTo(mutableSetOf()) {
-                            it != "entity_id" && (!selectOption || it != "option")
-                        } else emptySet()
+                        modifier = Modifier.testTag("stream_button_data"),
+                        fields = dataFields
                     )
                 }
+                if (!hasRequiredFields && data != null) {
+                    AdvancedToggle(expanded = showAdvanced, onToggle = { showAdvanced = !showAdvanced })
+                }
+            }
+        }
 
-                EditorPickerButton(
-                    label = stringResource(R.string.stream_button_state_entity),
-                    value = if (stateEntityId == null) stringResource(R.string.stream_button_follow_action)
-                        else iconEntity?.name ?: stateEntityId.orEmpty(),
-                    onClick = {
-                        onLoadEntities()
-                        picker = EditorPicker.STATE_ENTITY
-                    }
-                )
-                appearance?.state?.takeIf(String::isNotBlank)?.let { state ->
-                    Text(
-                        stringResource(R.string.stream_button_current_state, state),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (stateEntityId != null) {
-                    TextButton(onClick = {
+        EditorSection(stringResource(R.string.stream_button_section_appearance)) {
+            PickerField(
+                label = stringResource(R.string.stream_button_icon),
+                value = icon?.let(::iconDisplayName) ?: stringResource(R.string.stream_button_icon_auto),
+                leadingIcon = { IconPreview(previewIcon, fallbackIcon) },
+                onClick = { picker = EditorPicker.ICON }
+            )
+            PickerField(
+                label = stringResource(R.string.stream_button_state_entity),
+                value = if (stateEntityId == null) stringResource(R.string.stream_button_follow_action)
+                    else iconEntity?.name ?: stateEntityId.orEmpty(),
+                isPlaceholder = stateEntityId == null,
+                onClick = {
+                    onLoadEntities()
+                    picker = EditorPicker.STATE_ENTITY
+                },
+                clearLabel = stringResource(R.string.stream_button_clear_state_entity),
+                onClear = if (stateEntityId != null) {
+                    {
                         stateEntityId = null
                         stateColors = emptyMap()
-                    }) {
-                        Text(stringResource(R.string.stream_button_use_action_target))
                     }
-                    EditorPickerButton(
-                        label = stringResource(R.string.stream_button_state_colors_title),
-                        value = if (stateColors.isEmpty()) {
-                            stringResource(R.string.stream_button_state_colors_configure)
-                        } else {
-                            pluralStringResource(
-                                R.plurals.stream_button_state_colors_count, stateColors.size, stateColors.size
-                            )
-                        },
-                        onClick = { picker = EditorPicker.STATE_COLORS }
-                    )
-                }
-
-                Column {
-                    Text(
-                        stringResource(R.string.stream_button_icon),
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    OutlinedButton(
-                        onClick = { picker = EditorPicker.ICON },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        IconPreview(previewIcon, fallbackIcon)
-                        Text(
-                            text = icon?.let(::iconDisplayName) ?: stringResource(R.string.stream_button_icon_auto),
-                            modifier = Modifier.padding(start = 8.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                if (isLockAction || isDoorRelease) {
-                    Text(
-                        text = stringResource(
-                            if (isLockAction) R.string.stream_button_auth_to_unlock
-                            else R.string.stream_button_auth_to_open
-                        ),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                } else {
-                    EditorSwitch(
-                        text = stringResource(R.string.stream_button_require_auth),
-                        checked = requiresAuthentication,
-                        onCheckedChange = { requiresAuthentication = it }
-                    )
-                }
+                } else null
+            )
+            appearance?.state?.takeIf(String::isNotBlank)?.let { state ->
+                Text(
+                    stringResource(R.string.stream_button_current_state, state),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(android.R.string.cancel))
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = action != null,
-                onClick = {
-                    if (action != null) {
-                        onSave(
-                            StreamButton(
-                                id = existing?.id ?: UUID.randomUUID().toString(),
-                                action = action,
-                                requiresAuthentication = isLockAction || isDoorRelease || requiresAuthentication,
-                                visible = existing?.visible ?: true,
-                                icon = icon,
-                                entityIcon = currentEntityIcon,
-                                entityName = currentEntityName,
-                                stateEntityId = stateEntityId,
-                                stateColors = stateColors
-                            )
+            if (stateEntityId != null) {
+                PickerField(
+                    label = stringResource(R.string.stream_button_state_colors_title),
+                    value = if (stateColors.isEmpty()) {
+                        stringResource(R.string.stream_button_state_colors_configure)
+                    } else {
+                        pluralStringResource(
+                            R.plurals.stream_button_state_colors_count, stateColors.size, stateColors.size
                         )
-                    }
-                }
-            ) {
-                Text(stringResource(R.string.stream_button_done))
+                    },
+                    isPlaceholder = stateColors.isEmpty(),
+                    onClick = { picker = EditorPicker.STATE_COLORS }
+                )
             }
         }
-    )
-}
 
-@Composable
-internal fun EditorPickerButton(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    buttonModifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    Column(modifier = modifier) {
-        Text(label, style = MaterialTheme.typography.labelMedium)
-        OutlinedButton(onClick = onClick, modifier = buttonModifier.fillMaxWidth(), enabled = enabled) {
-            Text(value, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        EditorSection(stringResource(R.string.stream_button_section_security)) {
+            if (isLockAction || isDoorRelease) {
+                Text(
+                    text = stringResource(
+                        if (isLockAction) R.string.stream_button_auth_to_unlock
+                        else R.string.stream_button_auth_to_open
+                    ),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            } else {
+                EditorSwitch(
+                    text = stringResource(R.string.stream_button_require_auth),
+                    checked = requiresAuthentication,
+                    onCheckedChange = { requiresAuthentication = it }
+                )
+            }
         }
+    }
+
+    when (picker) {
+        EditorPicker.ENTITY -> HomeAssistantEntityPicker(
+            entities = filterEntitiesByDomain(entities, targetDomains),
+            isLoading = isLoadingEntities,
+            loadError = entityLoadError,
+            onRetry = onLoadEntities,
+            onDismiss = { picker = null },
+            selectedEntityId = entityId,
+            onSelect = { selected ->
+                if (entityId != selected.entityId) option = null
+                entityId = selected.entityId
+                cachedEntityName = selected.name.takeIf(String::isNotBlank)
+                picker = null
+            }
+        )
+        EditorPicker.STATE_ENTITY -> HomeAssistantEntityPicker(
+            entities = entities,
+            isLoading = isLoadingEntities,
+            loadError = entityLoadError,
+            onRetry = onLoadEntities,
+            onDismiss = { picker = null },
+            selectedEntityId = stateEntityId,
+            title = R.string.stream_button_choose_state_entity,
+            onSelect = { selected ->
+                if (stateEntityId != selected.entityId) stateColors = emptyMap()
+                stateEntityId = selected.entityId
+                picker = null
+            }
+        )
+        EditorPicker.STATE_COLORS -> StateColorEditor(
+            entityId = stateEntityId.orEmpty(),
+            currentState = appearance?.state,
+            entityOptions = iconEntity?.options.orEmpty(),
+            stateColors = stateColors,
+            onChange = { stateColors = it },
+            onDismiss = { picker = null }
+        )
+        EditorPicker.ICON -> StreamButtonIconPicker(
+            icon = icon,
+            automaticIcon = automaticIcon,
+            automaticFallback = fallbackIcon,
+            onDismiss = { picker = null },
+            onSelect = {
+                icon = it
+                picker = null
+            }
+        )
+        EditorPicker.SERVICE -> HomeAssistantServicePicker(
+            services = services,
+            isLoading = isLoadingServices,
+            loadError = serviceLoadError,
+            onRetry = onLoadServices,
+            onDismiss = { picker = null },
+            serviceId = service,
+            onSelect = { nextService ->
+                if (nextService != service) {
+                    val descriptor = services.find { serviceId(it) == nextService }
+                    val nextDomains = serviceTargetDomains(nextService, descriptor)
+                    if (nextDomains.isNotEmpty() && entityId?.substringBefore('.') !in nextDomains) {
+                        clearEntity()
+                    }
+                    option = null
+                    jsonText = ""
+                }
+                serviceId = nextService
+                picker = null
+            }
+        )
+        EditorPicker.OPTION -> SelectOptionPicker(
+            options = entity?.options.orEmpty(),
+            selectedOption = option,
+            onDismiss = { picker = null },
+            onSelect = {
+                option = it
+                picker = null
+            }
+        )
+        null -> Unit
+    }
+
+    if (confirmDiscard) {
+        DiscardChangesDialog(
+            onDiscard = {
+                confirmDiscard = false
+                onDismiss()
+            },
+            onKeepEditing = { confirmDiscard = false }
+        )
     }
 }
 
@@ -858,62 +871,84 @@ internal fun HomeAssistantServicePicker(
     val currentIsInCatalog = matches.any { serviceId(it) == serviceId }
     val showManual = isServiceId(search) && matches.none { serviceId(it) == search }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.stream_button_choose_service)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    label = { Text(stringResource(R.string.stream_button_search_services)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                } else if (loadError != null || services.isEmpty()) {
-                    Text(loadError ?: stringResource(R.string.stream_button_no_services))
-                    TextButton(onClick = onRetry) { Text(stringResource(R.string.stream_button_retry)) }
-                }
-                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
-                    if (search.isEmpty() && isServiceId(serviceId) && !currentIsInCatalog) {
-                        item { ServiceChoice(serviceId, null, true) { onSelect(serviceId) } }
-                    }
-                    if (showManual) {
-                        item {
-                            ServiceChoice(
-                                stringResource(R.string.stream_button_use_service, search),
-                                null,
-                                search == serviceId
-                            ) { onSelect(search) }
-                        }
-                    }
-                    items(matches, key = ::serviceId) { service ->
-                        val id = serviceId(service)
-                        val name = service.name?.takeIf(String::isNotBlank)
-                        ServiceChoice(name ?: id, id.takeIf { name != null }, id == serviceId) {
-                            onSelect(id)
-                        }
-                    }
-                }
-                if (search.isNotBlank() && !showManual && matches.isEmpty() && !isLoading) {
-                    Text(stringResource(R.string.stream_button_no_service_matches))
+    PickerSheet(title = stringResource(R.string.stream_button_choose_service), onDismiss = onDismiss) {
+        SearchField(query, { query = it }, R.string.stream_button_search_services)
+        if (isLoading) {
+            LoadingRow(R.string.stream_button_loading_services)
+        } else if (loadError != null || services.isEmpty()) {
+            Text(
+                loadError ?: stringResource(R.string.stream_button_no_services),
+                color = if (loadError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            TextButton(onClick = onRetry) { Text(stringResource(R.string.stream_button_retry)) }
+        }
+        if (search.isNotBlank() && !showManual && matches.isEmpty() && !isLoading) {
+            Text(stringResource(R.string.stream_button_no_service_matches))
+        }
+        LazyColumn(modifier = PickerListModifier) {
+            if (search.isEmpty() && isServiceId(serviceId) && !currentIsInCatalog) {
+                item { PickerChoice(serviceId, null, true) { onSelect(serviceId) } }
+            }
+            if (showManual) {
+                item {
+                    PickerChoice(
+                        stringResource(R.string.stream_button_use_service, search),
+                        null,
+                        search == serviceId
+                    ) { onSelect(search) }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
+            items(matches, key = ::serviceId) { service ->
+                val id = serviceId(service)
+                val name = service.name?.takeIf(String::isNotBlank)
+                PickerChoice(name ?: id, id.takeIf { name != null }, id == serviceId) {
+                    onSelect(id)
+                }
+            }
         }
+    }
+}
+
+@Composable
+internal fun SearchField(query: String, onQueryChange: (String) -> Unit, @StringRes label: Int) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        label = { Text(stringResource(label)) },
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
     )
 }
 
 @Composable
-private fun ServiceChoice(title: String, detail: String?, checked: Boolean, onSelect: () -> Unit) {
+internal fun LoadingRow(@StringRes text: Int) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(vertical = 8.dp)
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+        Text(stringResource(text))
+    }
+}
+
+@Composable
+internal fun PickerChoice(
+    title: String,
+    detail: String?,
+    checked: Boolean,
+    leading: @Composable (() -> Unit)? = null,
+    onSelect: () -> Unit
+) {
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = detail?.let { { Text(it) } },
+        leadingContent = leading,
         trailingContent = if (checked) { { Icon(Icons.Default.Check, contentDescription = null) } } else null,
+        colors = ListItemDefaults.colors(
+            containerColor = if (checked) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+        ),
         modifier = Modifier.clickable(onClick = onSelect).semantics { selected = checked }
     )
 }
@@ -944,9 +979,10 @@ private fun SelectOptionField(
 ) {
     val options = entity?.options.orEmpty()
     if (options.isNotEmpty()) {
-        EditorPickerButton(
+        PickerField(
             label = stringResource(R.string.stream_button_option),
             value = option ?: stringResource(R.string.stream_button_choose_option),
+            isPlaceholder = option == null,
             onClick = onOpen
         )
     } else {
@@ -973,20 +1009,13 @@ private fun SelectOptionPicker(
     onDismiss: () -> Unit,
     onSelect: (String) -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.stream_button_choose_option)) },
-        text = {
-            LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
-                items(options) { option ->
-                    ServiceChoice(option, null, option == selectedOption) { onSelect(option) }
-                }
+    PickerSheet(title = stringResource(R.string.stream_button_choose_option), onDismiss = onDismiss) {
+        LazyColumn {
+            items(options) { option ->
+                PickerChoice(option, null, option == selectedOption) { onSelect(option) }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
         }
-    )
+    }
 }
 
 @Composable
@@ -1005,66 +1034,31 @@ private fun StreamButtonIconPicker(
         if (search in found) listOf(search) + (found - search) else found
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.stream_button_choose_icon)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    label = { Text(stringResource(R.string.stream_button_icon_search)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                IconChoice(
-                    label = stringResource(R.string.stream_button_icon_auto),
-                    icon = automaticIcon,
-                    selected = icon == null,
-                    fallback = automaticFallback,
-                    onClick = { onSelect(null) }
-                )
-                if (matches.isEmpty()) {
-                    Text(stringResource(R.string.stream_button_icon_no_matches))
-                } else {
-                    LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
-                        items(matches, key = { it }) { name ->
-                            IconChoice(
-                                label = iconDisplayName(name),
-                                icon = name,
-                                selected = icon?.removePrefix("mdi:") == name,
-                                onClick = { onSelect(name) }
-                            )
-                        }
-                    }
+    PickerSheet(title = stringResource(R.string.stream_button_choose_icon), onDismiss = onDismiss) {
+        SearchField(query, { query = it }, R.string.stream_button_icon_search)
+        PickerChoice(
+            title = stringResource(R.string.stream_button_icon_auto),
+            detail = null,
+            checked = icon == null,
+            leading = { IconPreview(automaticIcon, automaticFallback) },
+            onSelect = { onSelect(null) }
+        )
+        if (matches.isEmpty()) {
+            Text(stringResource(R.string.stream_button_icon_no_matches))
+        } else {
+            LazyColumn(modifier = PickerListModifier) {
+                items(matches, key = { it }) { name ->
+                    PickerChoice(
+                        title = iconDisplayName(name),
+                        detail = null,
+                        checked = icon?.removePrefix("mdi:") == name,
+                        leading = { IconPreview(name, Icons.Default.Widgets) },
+                        onSelect = { onSelect(name) }
+                    )
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(android.R.string.cancel))
-            }
         }
-    )
-}
-
-@Composable
-private fun IconChoice(
-    label: String,
-    icon: String?,
-    selected: Boolean,
-    fallback: ImageVector = Icons.Default.Widgets,
-    onClick: () -> Unit
-) {
-    ListItem(
-        headlineContent = { Text(label) },
-        leadingContent = { IconPreview(icon, fallback) },
-        modifier = Modifier.clickable(onClick = onClick),
-        colors = ListItemDefaults.colors(
-            containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer
-            else MaterialTheme.colorScheme.surface
-        )
-    )
+    }
 }
 
 @Composable
@@ -1074,52 +1068,6 @@ private fun IconPreview(icon: String?, fallback: ImageVector) {
 }
 
 private fun iconDisplayName(icon: String): String = icon.removePrefix("mdi:").replace('-', ' ')
-
-@Composable
-private fun <T> EditorChoice(
-    label: String,
-    displayValue: String,
-    choices: List<T>,
-    selectedChoice: T?,
-    choiceLabel: @Composable (T) -> String,
-    onSelect: (T) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Column {
-        Text(label, style = MaterialTheme.typography.labelMedium)
-        Box {
-            OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    displayValue,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-            }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.heightIn(max = 320.dp)
-            ) {
-                choices.forEach { choice ->
-                    val isSelected = choice == selectedChoice
-                    DropdownMenuItem(
-                        text = { Text(choiceLabel(choice)) },
-                        modifier = Modifier.semantics { selected = isSelected },
-                        trailingIcon = if (isSelected) {
-                            { Icon(Icons.Default.Check, contentDescription = null) }
-                        } else null,
-                        onClick = {
-                            expanded = false
-                            onSelect(choice)
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
 
 @Composable
 internal fun HomeAssistantEntityPicker(
@@ -1141,64 +1089,32 @@ internal fun HomeAssistantEntityPicker(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    label = { Text(stringResource(R.string.stream_button_entity_search)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                when {
-                    isLoading -> Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator()
-                        Text(stringResource(R.string.stream_button_loading_entities))
-                    }
-                    loadError != null -> Column {
-                        Text(loadError, color = MaterialTheme.colorScheme.error)
-                        TextButton(onClick = onRetry) {
-                            Text(stringResource(R.string.stream_button_retry))
-                        }
-                    }
-                    entities.isEmpty() -> Column {
-                        Text(stringResource(R.string.stream_button_no_entities))
-                        TextButton(onClick = onRetry) {
-                            Text(stringResource(R.string.stream_button_refresh))
-                        }
-                    }
-                    matches.isEmpty() -> Text(stringResource(R.string.stream_button_no_matches))
-                    else -> LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
-                        items(matches, key = { it.entityId }) { entity ->
-                            val selected = selectedEntityId == entity.entityId
-                            ListItem(
-                                headlineContent = { Text(entity.name) },
-                                supportingContent = { Text(entity.entityId) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable(onClick = { onSelect(entity) }),
-                                colors = ListItemDefaults.colors(
-                                    containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer
-                                    else MaterialTheme.colorScheme.surface
-                                )
-                            )
-                        }
+    PickerSheet(title = stringResource(title), onDismiss = onDismiss) {
+        SearchField(query, { query = it }, R.string.stream_button_entity_search)
+        when {
+            isLoading -> LoadingRow(R.string.stream_button_loading_entities)
+            loadError != null -> Column {
+                Text(loadError, color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = onRetry) {
+                    Text(stringResource(R.string.stream_button_retry))
+                }
+            }
+            entities.isEmpty() -> Column {
+                Text(stringResource(R.string.stream_button_no_entities))
+                TextButton(onClick = onRetry) {
+                    Text(stringResource(R.string.stream_button_refresh))
+                }
+            }
+            matches.isEmpty() -> Text(stringResource(R.string.stream_button_no_matches))
+            else -> LazyColumn(modifier = PickerListModifier) {
+                items(matches, key = { it.entityId }) { entity ->
+                    PickerChoice(entity.name, entity.entityId, selectedEntityId == entity.entityId) {
+                        onSelect(entity)
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(android.R.string.cancel))
-            }
         }
-    )
+    }
 }
 
 private enum class ButtonRow(
@@ -1212,11 +1128,18 @@ private enum class ButtonRow(
     fun buttons(layout: StreamButtonLayout): List<StreamButton> =
         if (this == TOP) layout.top else layout.bottom
 
-    fun replace(layout: StreamButtonLayout, buttons: List<StreamButton>): StreamButtonLayout =
-        if (this == TOP) layout.copy(top = buttons) else layout.copy(bottom = buttons)
+    fun items(layout: StreamButtonLayout): List<StreamBottomItem> =
+        if (this == TOP) layout.top.map(StreamBottomItem::Custom) else layout.bottomItems
+
+    fun replaceItems(layout: StreamButtonLayout, items: List<StreamBottomItem>): StreamButtonLayout =
+        if (this == TOP) {
+            layout.copy(top = items.filterIsInstance<StreamBottomItem.Custom>().map(StreamBottomItem.Custom::button))
+        } else {
+            layout.withBottomItems(items)
+        }
 }
 
-private fun List<StreamButton>.move(from: Int, to: Int): List<StreamButton> =
+private fun <T> List<T>.move(from: Int, to: Int): List<T> =
     toMutableList().apply { add(to, removeAt(from)) }
 
 internal fun serviceId(service: HomeAssistantService): String = "${service.domain}.${service.service}"

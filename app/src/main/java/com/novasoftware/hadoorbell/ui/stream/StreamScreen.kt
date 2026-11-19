@@ -1,6 +1,8 @@
 package com.novasoftware.hadoorbell.ui.stream
 
-import android.widget.Toast
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -9,11 +11,14 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,25 +28,30 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -50,22 +60,33 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -74,13 +95,18 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novasoftware.hadoorbell.R
 import com.novasoftware.hadoorbell.core.utils.BiometricPromptHelper
+import com.novasoftware.hadoorbell.core.webrtc.WebRtcManager
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import com.novasoftware.hadoorbell.domain.model.LockState
+import com.novasoftware.hadoorbell.domain.model.StreamBottomItem
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
+import com.novasoftware.hadoorbell.domain.model.StreamControl
 import com.novasoftware.hadoorbell.ui.icons.StreamButtonIcon
 import com.novasoftware.hadoorbell.ui.icons.resolveStreamButtonIcon
 import com.novasoftware.hadoorbell.ui.icons.streamButtonFallbackIcon
+import com.novasoftware.hadoorbell.ui.theme.StreamColors
+import kotlinx.coroutines.launch
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 
@@ -89,7 +115,9 @@ import org.webrtc.SurfaceViewRenderer
 fun StreamScreen(
     onNavigateToSettings: () -> Unit,
     onExit: () -> Unit,
-    viewModel: StreamViewModel
+    viewModel: StreamViewModel,
+    answerRequest: Long? = null,
+    onAnswerRequestHandled: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -98,18 +126,23 @@ fun StreamScreen(
     val authFailedText = stringResource(R.string.authentication_unavailable)
     val resources by rememberUpdatedState(LocalResources.current)
     val navigateToSettings by rememberUpdatedState(onNavigateToSettings)
+    val snackbarHostState = remember { SnackbarHostState() }
+    val messageScope = rememberCoroutineScope()
+    fun showMessage(message: String, long: Boolean) {
+        messageScope.launch {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            snackbarHostState.showSnackbar(
+                message = message,
+                withDismissAction = long,
+                duration = if (long) SnackbarDuration.Long else SnackbarDuration.Short
+            )
+        }
+    }
 
-    // Collect one-shot UI events
     LaunchedEffect(Unit) {
         viewModel.uiEvent.collect { event ->
             when (event) {
-                is UiEvent.ShowToast -> {
-                    Toast.makeText(
-                        context,
-                        event.message,
-                        if (event.long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
-                    ).show()
-                }
+                is UiEvent.ShowMessage -> showMessage(event.message, event.long)
                 is UiEvent.Authentication -> {
                     val button = (event as? UiEvent.AuthenticateStreamButton)?.button
                     val action = button?.action
@@ -142,11 +175,11 @@ fun StreamScreen(
                         onSuccess = { completeAuthentication(true) },
                         onCryptoFailure = {
                             completeAuthentication(false)
-                            Toast.makeText(context, authFailedText, Toast.LENGTH_LONG).show()
+                            showMessage(authFailedText, long = true)
                         },
                         onError = { message ->
                             completeAuthentication(false)
-                            message?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                            message?.let { showMessage(it.toString(), long = true) }
                         }
                     )
                 }
@@ -154,7 +187,6 @@ fun StreamScreen(
         }
     }
 
-    // Animation for the pulsing mic
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
@@ -186,128 +218,282 @@ fun StreamScreen(
         }
     }
 
+    LaunchedEffect(answerRequest) {
+        if (answerRequest != null) {
+            viewModel.answerWhenReady(context)
+            onAnswerRequestHandled()
+        }
+    }
+
+    var fillScreen by rememberSaveable { mutableStateOf(false) }
+
+    StreamContent(
+        uiState = uiState,
+        pulseScale = pulseScale,
+        snackbarHostState = snackbarHostState,
+        onSettingsClick = viewModel::requestSettingsAuthentication,
+        onCloseClick = {
+            viewModel.cancelAuthentication()
+            onExit()
+        },
+        onButtonClick = viewModel::handleStreamButton,
+        onSoundClick = viewModel::toggleStreamMute,
+        onCallClick = { viewModel.toggleMic(context) },
+        onRetry = { viewModel.retryConnection(context) },
+        onDismissQuickReply = viewModel::dismissQuickReplySheet,
+        onSendQuickReply = viewModel::sendQuickReply
+    ) { manager ->
+        key(manager) {
+            StreamVideo(
+                manager = manager,
+                fillScreen = fillScreen,
+                onFillScreenChange = { fillScreen = it },
+                onRendererReady = viewModel::startStream
+            )
+        }
+    }
+}
+
+/** The stream screen's layout. The live video comes from [video], so the layout can also be shown without a stream. */
+@Composable
+internal fun StreamContent(
+    uiState: StreamUiState,
+    pulseScale: Float,
+    snackbarHostState: SnackbarHostState,
+    onSettingsClick: () -> Unit,
+    onCloseClick: () -> Unit,
+    onButtonClick: (StreamButton) -> Unit,
+    onSoundClick: () -> Unit,
+    onCallClick: () -> Unit,
+    onRetry: () -> Unit,
+    onDismissQuickReply: () -> Unit,
+    onSendQuickReply: (String) -> Unit,
+    video: @Composable (WebRtcManager) -> Unit
+) {
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        // Video View or Error
-        if (uiState.errorMessage != null) {
-            Column(
-                modifier = Modifier.align(Alignment.Center).padding(32.dp),
+        val manager = uiState.webRtcManager
+        when {
+            uiState.errorMessage != null -> StreamError(
+                message = uiState.errorMessage,
+                onRetry = onRetry,
+                modifier = Modifier.align(Alignment.Center)
+            )
+            manager != null -> video(manager)
+            else -> Column(
+                modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Icon(Icons.Default.Videocam, contentDescription = "Error", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(64.dp))
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 Text(
-                    text = stringResource(R.string.stream_connection_failed),
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.error,
-                    fontWeight = FontWeight.Bold
+                    text = stringResource(R.string.stream_connecting),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = StreamColors.SecondaryText
                 )
-                Text(
-                    text = uiState.errorMessage ?: "Unknown Error",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        } else {
-            uiState.webRtcManager?.let { manager ->
-                AndroidView(
-                    factory = { ctx ->
-                        val frameLayout = android.widget.FrameLayout(ctx)
-                        frameLayout.layoutParams = android.view.ViewGroup.LayoutParams(
-                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                            android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-
-                        val renderer = SurfaceViewRenderer(ctx).apply {
-                            init(manager.getEglBaseContext(), null)
-                            setEnableHardwareScaler(false)
-                            setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
-                        }
-
-                        frameLayout.addView(renderer, android.widget.FrameLayout.LayoutParams(
-                            android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-                            android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-                            android.view.Gravity.CENTER
-                        ))
-
-                        viewModel.startStream(renderer)
-
-                        frameLayout
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            } ?: run {
-                Column(
-                    modifier = Modifier.align(Alignment.Center),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    Text(
-                        text = stringResource(R.string.stream_connecting),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = Color.White.copy(alpha = 0.8f)
-                    )
-                }
             }
         }
 
-        // Top Gradient Overlay
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .height(120.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)
-                    )
-                )
+                .background(Brush.verticalGradient(listOf(StreamColors.TopScrim, Color.Transparent)))
         )
 
         StreamTopControls(
             uiState = uiState,
-            onSettingsClick = viewModel::requestSettingsAuthentication,
-            onCloseClick = {
-                viewModel.cancelAuthentication()
-                onExit()
-            },
-            onButtonClick = viewModel::handleStreamButton,
+            onSettingsClick = onSettingsClick,
+            onCloseClick = onCloseClick,
+            onButtonClick = onButtonClick,
             modifier = Modifier
-                .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 16.dp)
+                .padding(top = topInset + 16.dp)
                 .align(Alignment.TopCenter)
         )
 
-        // Bottom Gradient Overlay
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(200.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))
-                    )
-                )
+                .background(Brush.verticalGradient(listOf(Color.Transparent, StreamColors.BottomScrim)))
         )
 
         StreamBottomControls(
             uiState = uiState,
             pulseScale = pulseScale,
-            onSoundClick = viewModel::toggleStreamMute,
-            onCallClick = { viewModel.toggleMic(context) },
-            onButtonClick = viewModel::handleStreamButton,
+            onSoundClick = onSoundClick,
+            onCallClick = onCallClick,
+            onButtonClick = onButtonClick,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 32.dp)
         )
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = topInset + 16.dp + TOP_CONTROL_SIZE + 12.dp, start = 16.dp, end = 16.dp)
+        ) { data ->
+            Snackbar(
+                snackbarData = data,
+                shape = RoundedCornerShape(24.dp),
+                containerColor = StreamColors.MessageBackground,
+                contentColor = StreamColors.OnControl,
+                dismissActionContentColor = StreamColors.SecondaryText
+            )
+        }
     }
 
     uiState.quickReplySheet?.let { sheet ->
         QuickReplySheet(
             sheet = sheet,
-            onDismiss = viewModel::dismissQuickReplySheet,
-            onSelect = viewModel::sendQuickReply
+            onDismiss = onDismissQuickReply,
+            onSelect = onSendQuickReply
         )
+    }
+}
+
+@Composable
+private fun StreamVideo(
+    manager: WebRtcManager,
+    fillScreen: Boolean,
+    onFillScreenChange: (Boolean) -> Unit,
+    onRendererReady: (SurfaceViewRenderer) -> Unit
+) {
+    val currentFillScreen by rememberUpdatedState(fillScreen)
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+    var videoSize by remember { mutableStateOf(IntSize.Zero) }
+
+    fun resetZoom() {
+        zoom = 1f
+        pan = Offset.Zero
+    }
+    fun toggleFill() {
+        onFillScreenChange(!currentFillScreen)
+        resetZoom()
+    }
+    fun clampPan(offset: Offset, scale: Float, container: IntSize): Offset {
+        val maxX = ((videoSize.width * scale - container.width) / 2f).coerceAtLeast(0f)
+        val maxY = ((videoSize.height * scale - container.height) / 2f).coerceAtLeast(0f)
+        return Offset(offset.x.coerceIn(-maxX, maxX), offset.y.coerceIn(-maxY, maxY))
+    }
+
+    val fillLabel = stringResource(if (fillScreen) R.string.stream_video_fit else R.string.stream_video_fill)
+    val resetZoomLabel = stringResource(R.string.stream_video_reset_zoom)
+
+    Box(Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { ctx ->
+                val renderer = SurfaceViewRenderer(ctx).apply {
+                    init(manager.getEglBaseContext(), null)
+                    setEnableHardwareScaler(false)
+                    setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
+                    tag = RendererCommon.ScalingType.SCALE_ASPECT_FIT
+                    addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+                        videoSize = IntSize(view.width, view.height)
+                    }
+                }
+                FrameLayout(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    addView(
+                        renderer,
+                        FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            Gravity.CENTER
+                        )
+                    )
+                    onRendererReady(renderer)
+                }
+            },
+            update = { frame ->
+                val renderer = frame.getChildAt(0) as SurfaceViewRenderer
+                val scaling = if (fillScreen) {
+                    RendererCommon.ScalingType.SCALE_ASPECT_FILL
+                } else {
+                    RendererCommon.ScalingType.SCALE_ASPECT_FIT
+                }
+                if (renderer.tag != scaling) {
+                    renderer.setScalingType(scaling)
+                    renderer.tag = scaling
+                }
+                renderer.scaleX = zoom
+                renderer.scaleY = zoom
+                renderer.translationX = pan.x
+                renderer.translationY = pan.y
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures(onDoubleTap = { if (zoom > 1f) resetZoom() else toggleFill() })
+                }
+                .pointerInput(Unit) {
+                    detectTransformGestures { centroid, panChange, zoomChange, _ ->
+                        val newZoom = (zoom * zoomChange).coerceIn(1f, MAX_VIDEO_ZOOM)
+                        val focus = centroid - Offset(size.width / 2f, size.height / 2f)
+                        val newPan = focus - (focus - pan) * (newZoom / zoom) + panChange
+                        zoom = newZoom
+                        pan = if (newZoom == 1f) Offset.Zero else clampPan(newPan, newZoom, size)
+                    }
+                }
+                .semantics {
+                    customActions = listOfNotNull(
+                        CustomAccessibilityAction(fillLabel) {
+                            toggleFill()
+                            true
+                        },
+                        CustomAccessibilityAction(resetZoomLabel) {
+                            resetZoom()
+                            true
+                        }.takeIf { zoom > 1f }
+                    )
+                }
+        )
+    }
+}
+
+@Composable
+private fun StreamError(message: String?, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Icon(
+            Icons.Default.VideocamOff,
+            contentDescription = null,
+            tint = StreamColors.Error,
+            modifier = Modifier.size(64.dp)
+        )
+        Text(
+            text = stringResource(R.string.stream_connection_failed),
+            style = MaterialTheme.typography.headlineSmall,
+            color = StreamColors.OnControl,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            text = message ?: stringResource(R.string.stream_button_unknown_error),
+            color = StreamColors.SecondaryText,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center
+        )
+        Button(onClick = onRetry) {
+            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.stream_button_retry))
+        }
     }
 }
 
@@ -325,11 +511,12 @@ private fun StreamTopControls(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(
+        StreamCircleButton(
             onClick = onSettingsClick,
-            modifier = Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.2f))
+            color = StreamColors.ControlBackground,
+            size = 40.dp
         ) {
-            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
+            Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.stream_settings))
         }
 
         if (buttons.isNotEmpty()) {
@@ -345,11 +532,9 @@ private fun StreamTopControls(
                         ) {
                             StreamActionButton(
                                 button = button,
-                                enabled = uiState.canRun(button),
-                                lockState = uiState.lockStates[button.action.entityId] ?: LockState.Unknown,
-                                entityAppearance = uiState.entityAppearances[button.iconEntityId],
+                                uiState = uiState,
                                 onClick = { onButtonClick(button) },
-                                circleSize = 48.dp,
+                                circleSize = TOP_CONTROL_SIZE,
                                 iconSize = 24.dp
                             )
                         }
@@ -358,11 +543,12 @@ private fun StreamTopControls(
             }
         }
 
-        IconButton(
+        StreamCircleButton(
             onClick = onCloseClick,
-            modifier = Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.2f))
+            color = StreamColors.ControlBackground,
+            size = 40.dp
         ) {
-            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.stream_close))
         }
     }
 }
@@ -376,79 +562,117 @@ internal fun StreamBottomControls(
     onButtonClick: (StreamButton) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val buttons = uiState.streamButtonLayout.bottom.filter(StreamButton::visible)
+    val items = uiState.streamButtonLayout.bottomItems.filter { it !is StreamBottomItem.Custom || it.button.visible }
+    val buttonCount = items.count { it is StreamBottomItem.Custom }
     val controlSize = 64.dp
     val callContainerSize = 80.dp
     val fixedWidth = controlSize + callContainerSize
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val fullWidth = fixedWidth + controlSize * buttons.size
+        val fullWidth = fixedWidth + controlSize * buttonCount
         val horizontalPadding = ((maxWidth - fullWidth) / 2).coerceIn(8.dp, 24.dp)
-        val actionSize = if (buttons.isEmpty()) controlSize else
-            ((maxWidth - fixedWidth - horizontalPadding * 2) / buttons.size).coerceIn(48.dp, controlSize)
+        val actionSize = if (buttonCount == 0) controlSize else
+            ((maxWidth - fixedWidth - horizontalPadding * 2) / buttonCount).coerceIn(48.dp, controlSize)
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = horizontalPadding),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            FloatingActionButton(
-                onClick = onSoundClick,
-                modifier = Modifier.size(controlSize),
-                containerColor = Color.White.copy(alpha = 0.2f),
-                contentColor = Color.White,
-                shape = CircleShape,
-                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp)
-            ) {
-                Icon(
-                    imageVector = if (uiState.isStreamMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                    contentDescription = if (uiState.isStreamMuted) "Unmute Stream" else "Mute Stream",
-                    modifier = Modifier.size(28.dp)
-                )
+            items.forEach { item ->
+                when (item) {
+                    is StreamBottomItem.Control -> key(item.control) {
+                        when (item.control) {
+                            StreamControl.SOUND -> SoundButton(uiState, onSoundClick, controlSize)
+                            StreamControl.CALL -> CallButton(uiState, pulseScale, onCallClick, controlSize, callContainerSize)
+                        }
+                    }
+                    is StreamBottomItem.Custom -> key(item.button.id) {
+                        StreamActionButton(
+                            button = item.button,
+                            uiState = uiState,
+                            onClick = { onButtonClick(item.button) },
+                            circleSize = actionSize,
+                            iconSize = 28.dp
+                        )
+                    }
+                }
             }
+        }
+    }
+}
 
+@Composable
+private fun SoundButton(uiState: StreamUiState, onClick: () -> Unit, size: Dp) {
+    StreamCircleButton(
+        onClick = onClick,
+        enabled = uiState.isStreamAvailable,
+        color = StreamColors.ControlBackground,
+        size = size
+    ) {
+        Icon(
+            imageVector = if (uiState.isStreamMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+            contentDescription = stringResource(if (uiState.isStreamMuted) R.string.stream_unmute else R.string.stream_mute),
+            modifier = Modifier.size(28.dp)
+        )
+    }
+}
+
+@Composable
+private fun CallButton(uiState: StreamUiState, pulseScale: Float, onClick: () -> Unit, size: Dp, containerSize: Dp) {
+    Box(modifier = Modifier.size(containerSize), contentAlignment = Alignment.Center) {
+        if (uiState.isMicEnabled) {
             Box(
-                modifier = Modifier.size(callContainerSize),
-                contentAlignment = Alignment.Center
-            ) {
-                if (uiState.isMicEnabled) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .scale(pulseScale)
-                            .clip(CircleShape)
-                            .background(Color.Red.copy(alpha = 0.3f))
-                    )
-                }
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scale(pulseScale)
+                    .background(StreamColors.CallPulse, CircleShape)
+            )
+        }
+        StreamCircleButton(
+            onClick = onClick,
+            enabled = uiState.isStreamAvailable && !uiState.isSwitchingModes,
+            busy = uiState.isSwitchingModes,
+            color = if (uiState.isMicEnabled) StreamColors.HangUp else StreamColors.Answer,
+            size = size
+        ) {
+            Icon(
+                imageVector = if (uiState.isMicEnabled) Icons.Default.CallEnd else Icons.Default.Call,
+                contentDescription = stringResource(if (uiState.isMicEnabled) R.string.stream_end_call else R.string.stream_button_call),
+                modifier = Modifier.size(28.dp)
+            )
+        }
+    }
+}
 
-                FloatingActionButton(
-                    onClick = onCallClick,
-                    modifier = Modifier.size(controlSize),
-                    containerColor = if (uiState.isMicEnabled) Color.Red else Color(0xFF4CAF50),
-                    contentColor = Color.White,
-                    shape = CircleShape,
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp)
-                ) {
-                    Icon(
-                        imageVector = if (uiState.isMicEnabled) Icons.Default.CallEnd else Icons.Default.Call,
-                        contentDescription = if (uiState.isMicEnabled) "End Call" else "Call",
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-            }
-
-            buttons.forEach { button ->
-                key(button.id) {
-                    StreamActionButton(
-                        button = button,
-                        enabled = uiState.canRun(button),
-                        lockState = uiState.lockStates[button.action.entityId] ?: LockState.Unknown,
-                        entityAppearance = uiState.entityAppearances[button.iconEntityId],
-                        onClick = { onButtonClick(button) },
-                        circleSize = actionSize,
-                        iconSize = 28.dp
-                    )
-                }
-            }
+@Composable
+private fun StreamCircleButton(
+    onClick: () -> Unit,
+    color: Color,
+    size: Dp,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    busy: Boolean = false,
+    contentColor: Color = StreamColors.OnControl,
+    content: @Composable () -> Unit
+) {
+    val dimmed = !enabled && !busy
+    Box(modifier = Modifier.size(size), contentAlignment = Alignment.Center) {
+        Surface(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = modifier.fillMaxSize(),
+            shape = CircleShape,
+            color = if (dimmed) color.copy(alpha = color.alpha * 0.5f) else color,
+            contentColor = contentColor.copy(alpha = if (dimmed) 0.5f else 1f)
+        ) {
+            Box(contentAlignment = Alignment.Center) { content() }
+        }
+        if (busy) {
+            CircularProgressIndicator(
+                modifier = Modifier.fillMaxSize(),
+                color = StreamColors.OnControl,
+                strokeWidth = 3.dp
+            )
         }
     }
 }
@@ -517,13 +741,14 @@ private fun QuickReplySheet(
 @Composable
 private fun StreamActionButton(
     button: StreamButton,
-    enabled: Boolean,
-    lockState: LockState,
-    entityAppearance: HomeAssistantEntityAppearance?,
+    uiState: StreamUiState,
     onClick: () -> Unit,
     circleSize: Dp,
     iconSize: Dp
 ) {
+    val lockState = uiState.lockStates[button.action.entityId] ?: LockState.Unknown
+    val entityAppearance = uiState.entityAppearances[button.iconEntityId]
+    val running = uiState.isRunning(button)
     val isLock = button.action is StreamButtonAction.DoorLock
     val fallbackIcon = streamButtonFallbackIcon(button.action, lockState)
     val usesStateEntity = !button.stateEntityId.isNullOrBlank()
@@ -544,23 +769,24 @@ private fun StreamActionButton(
         )
     }
     val defaultBackground = when (displayedLockState) {
-        LockState.Unlocked -> Color.Red.copy(alpha = 0.8f)
-        LockState.Jammed -> Color(0xFFFFA500)
-        LockState.Locking, LockState.Unlocking -> Color.Gray.copy(alpha = 0.8f)
-        LockState.Unknown -> Color.DarkGray.copy(alpha = 0.8f)
-        LockState.Locked, null -> Color.White.copy(alpha = 0.2f)
+        LockState.Unlocked -> StreamColors.LockUnlocked
+        LockState.Jammed -> StreamColors.LockJammed
+        LockState.Locking, LockState.Unlocking -> StreamColors.LockBusy
+        LockState.Unknown -> StreamColors.LockUnknown
+        LockState.Locked, null -> StreamColors.ControlBackground
     }
     val stateBackground = button.backgroundForState(entityAppearance)
     val iconColor = if (stateBackground != null && stateBackground.alpha >= 0.75f &&
         stateBackground.luminance() > 0.179f
-    ) Color.Black else Color.White
+    ) Color.Black else StreamColors.OnControl
     val hasSeparateStateDescription = if (isLock) {
         usesStateEntity && button.iconEntityId != button.action.entityId
     } else {
         usesStateEntity && stateEntityLockState == null
     }
     val entityDescription = entityAppearance?.state?.takeIf { hasSeparateStateDescription && it.isNotBlank() }
-    val description = listOfNotNull(lockDescription, entityDescription).joinToString()
+    val progressDescription = if (running) stringResource(R.string.stream_button_running) else null
+    val description = listOfNotNull(progressDescription, lockDescription, entityDescription).joinToString()
     val stateSemantics = if (description.isEmpty()) Modifier else Modifier.semantics {
         stateDescription = description
     }
@@ -577,21 +803,21 @@ private fun StreamActionButton(
         )
         angle
     } else 0f
-    Surface(
+
+    StreamCircleButton(
         onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.size(circleSize).then(stateSemantics),
-        shape = CircleShape,
+        enabled = uiState.canRun(button),
+        busy = running,
         color = stateBackground ?: defaultBackground,
-        contentColor = iconColor.copy(alpha = if (enabled || isLock) 1f else 0.5f)
+        contentColor = iconColor,
+        size = circleSize,
+        modifier = stateSemantics
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            val modifier = Modifier.size(iconSize)
-            if (resolvedIcon == null) {
-                Icon(fallbackIcon, button.displayName, modifier.rotate(rotation))
-            } else {
-                StreamButtonIcon(resolvedIcon, button.displayName, modifier)
-            }
+        val modifier = Modifier.size(iconSize)
+        if (resolvedIcon == null) {
+            Icon(fallbackIcon, button.displayName, modifier.rotate(rotation))
+        } else {
+            StreamButtonIcon(resolvedIcon, button.displayName, modifier)
         }
     }
 }
@@ -600,3 +826,6 @@ internal fun StreamButton.backgroundForState(appearance: HomeAssistantEntityAppe
     val hex = colorForState(appearance?.state)?.removePrefix("#") ?: return null
     return Color(if (hex.length == 6) 0xFF000000L or hex.toLong(16) else hex.toLong(16))
 }
+
+private val TOP_CONTROL_SIZE = 48.dp
+private const val MAX_VIDEO_ZOOM = 4f

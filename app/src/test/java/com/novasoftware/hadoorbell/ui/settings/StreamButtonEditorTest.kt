@@ -14,6 +14,9 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -24,9 +27,12 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.Modifier
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.gson.JsonObject
+import com.google.gson.JsonPrimitive
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntity
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantEntityAppearance
 import com.novasoftware.hadoorbell.domain.model.HomeAssistantService
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantServiceField
+import com.novasoftware.hadoorbell.domain.model.StreamBottomItem
 import com.novasoftware.hadoorbell.domain.model.StreamButton
 import com.novasoftware.hadoorbell.domain.model.StreamButtonAction
 import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
@@ -79,17 +85,16 @@ class StreamButtonEditorTest {
         composeTestRule.onNode(hasText("Lock or unlock") and hasAnyAncestor(isDialog())).performClick()
         composeTestRule.onNode(hasText("Lock or unlock") and isSelected()).assertIsDisplayed()
         composeTestRule.onNodeWithText("Call a service").performClick()
-        composeTestRule.onNodeWithText("Choose a service").performClick()
+        composeTestRule.onNode(hasText("Choose a service") and hasClickAction()).performClick()
         composeTestRule.onNode(hasText("Lock or unlock") and hasAnyAncestor(isDialog())).assertDoesNotExist()
-        composeTestRule.onNodeWithText("Unlock").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Cancel").performClick()
+        composeTestRule.onNode(hasText("Unlock") and inPickerSheet).performClick()
         composeTestRule.onNode(hasText("Call a service") and hasAnyAncestor(isDialog())).performClick()
-        composeTestRule.onNode(hasText("Lock or unlock") and !hasAnyAncestor(isDialog())).performClick()
+        composeTestRule.onNodeWithText("Lock or unlock").performClick()
         composeTestRule.onNodeWithText("Choose a service").assertDoesNotExist()
         composeTestRule.onNode(hasText("Front door") and hasAnyAncestor(isDialog())).performClick()
-        composeTestRule.onNodeWithText("lock.front").assertExists()
+        composeTestRule.onNode(hasText("lock.front") and inPickerSheet).assertExists()
         composeTestRule.onNodeWithText("Front relay").assertDoesNotExist()
-        composeTestRule.onNode(hasText("Front door") and hasAnyAncestor(isDialog())).performClick()
+        composeTestRule.onNode(hasText("Front door") and inPickerSheet).performClick()
         composeTestRule.onNodeWithText("Done").performClick()
         composeTestRule.runOnIdle {
             assertEquals(lock.copy(entityIcon = "mdi:lock"), layout.top.single())
@@ -218,7 +223,7 @@ class StreamButtonEditorTest {
         composeTestRule.onNodeWithText("Porch light · unavailable").performScrollTo().assertIsDisplayed()
 
         composeTestRule.onNodeWithText("Toggle porch").performScrollTo().performClick()
-        composeTestRule.onNodeWithText("Use action target").performScrollTo().performClick()
+        composeTestRule.onNodeWithContentDescription("Use action target instead").performScrollTo().performClick()
         composeTestRule.onNodeWithText("Done").performClick()
         composeTestRule.runOnIdle {
             assertEquals(script, layout.top.single())
@@ -261,7 +266,7 @@ class StreamButtonEditorTest {
         composeTestRule.onNodeWithTag("state_color_state").performScrollTo().performTextInput("Guest mode")
         composeTestRule.onNodeWithTag("state_color_hex").performScrollTo().performTextInput("802e7d32")
         composeTestRule.onNodeWithText("OK").performClick()
-        composeTestRule.onNodeWithText("Done").performClick()
+        composeTestRule.onNode(hasText("Guest mode") and inPickerSheet).assertExists()
         composeTestRule.onNodeWithText("Done").performClick()
 
         composeTestRule.runOnIdle {
@@ -272,7 +277,7 @@ class StreamButtonEditorTest {
         }
 
         composeTestRule.onNodeWithText("Toggle porch").performScrollTo().performClick()
-        composeTestRule.onNodeWithText("Use action target").performScrollTo().performClick()
+        composeTestRule.onNodeWithContentDescription("Use action target instead").performScrollTo().performClick()
         composeTestRule.onNodeWithText("Choose colors by state").assertDoesNotExist()
         composeTestRule.onNodeWithText("Done").performClick()
 
@@ -360,4 +365,114 @@ class StreamButtonEditorTest {
             assertEquals(door.copy(visible = true), layout.bottom.single())
         }
     }
+
+    @Test
+    fun `sound and call can be reordered among the bottom buttons`() {
+        val chime = StreamButton("chime", StreamButtonAction.CallService("button", "press", "button.chime"), entityName = "Chime")
+        var layout by mutableStateOf(StreamButtonLayout(bottom = listOf(chime)))
+        showEditor({ layout }, { layout = it })
+
+        composeTestRule.onNodeWithContentDescription("Move Sound up").assertIsNotEnabled()
+        composeTestRule.onNodeWithContentDescription("Move Call down").performScrollTo().performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(listOf(chime), layout.bottom)
+            assertEquals(0, layout.soundPosition)
+            assertEquals(2, layout.callPosition)
+        }
+
+        composeTestRule.onNodeWithContentDescription("Move Sound down").performScrollTo().performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(1, layout.soundPosition)
+            assertEquals(2, layout.callPosition)
+            assertEquals(chime, (layout.bottomItems.first() as StreamBottomItem.Custom).button)
+        }
+    }
+
+    @Test
+    fun `closing an edited button asks before discarding the changes`() {
+        val chime = StreamButton("chime", StreamButtonAction.CallService("button", "press", "button.chime"), entityName = "Chime")
+        var layout by mutableStateOf(StreamButtonLayout(top = listOf(chime)))
+        showEditor({ layout }, { layout = it })
+
+        composeTestRule.onNodeWithText("Chime").performScrollTo().performClick()
+        composeTestRule.onNodeWithContentDescription("Close").performClick()
+        composeTestRule.onNodeWithText("Discard unsaved changes?").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Edit stream button").assertDoesNotExist()
+
+        composeTestRule.onNodeWithText("Chime").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Require device authentication").performScrollTo().performClick()
+        composeTestRule.onNodeWithContentDescription("Close").performClick()
+        composeTestRule.onNodeWithText("Discard unsaved changes?").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Keep editing").performClick()
+        composeTestRule.onNodeWithText("Edit stream button").assertIsDisplayed()
+
+        composeTestRule.onNodeWithContentDescription("Close").performClick()
+        composeTestRule.onNodeWithText("Discard").performClick()
+        composeTestRule.onNodeWithText("Edit stream button").assertDoesNotExist()
+        composeTestRule.runOnIdle { assertEquals(chime, layout.top.single()) }
+    }
+
+    @Test
+    fun `service fields can be added to the action data from chips`() {
+        var layout by mutableStateOf(StreamButtonLayout())
+        val service = HomeAssistantService(
+            "light", "turn_on", "Turn on",
+            fields = mapOf(
+                "brightness" to HomeAssistantServiceField(defaultValue = JsonPrimitive(100)),
+                "transition" to HomeAssistantServiceField()
+            )
+        )
+        showEditor({ layout }, { layout = it }, services = listOf(service))
+
+        composeTestRule.onNodeWithText("Add top button").performClick()
+        composeTestRule.onNodeWithText("Choose a service").performClick()
+        composeTestRule.onNodeWithText("Turn on").performClick()
+        composeTestRule.onNodeWithTag("stream_button_data").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Show advanced options").performScrollTo().performClick()
+        composeTestRule.onNodeWithContentDescription("Add the brightness field").performScrollTo().performClick()
+        composeTestRule.onNodeWithContentDescription("Add the brightness field").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Done").performClick()
+
+        composeTestRule.runOnIdle {
+            val action = layout.top.single().action as StreamButtonAction.CallService
+            assertEquals(100, action.data.get("brightness").asInt)
+        }
+    }
+
+    @Test
+    fun `inserting a field selects its placeholder value`() {
+        val withDefault = insertServiceField("", "brightness", HomeAssistantServiceField(defaultValue = JsonPrimitive(100)))!!
+        assertEquals("100", withDefault.text.substring(withDefault.selection.start, withDefault.selection.end))
+
+        val blank = insertServiceField("""{"color_name":"red"}""", "transition", HomeAssistantServiceField())!!
+        assertTrue(blank.selection.collapsed)
+        assertEquals("\"\"", blank.text.substring(blank.selection.start - 1, blank.selection.start + 1))
+        assertEquals("red", parseJsonObject(blank.text)?.get("color_name")?.asString)
+
+        assertEquals(null, insertServiceField("[]", "transition", HomeAssistantServiceField()))
+    }
+
+    private fun showEditor(
+        layout: () -> StreamButtonLayout,
+        onLayoutChange: (StreamButtonLayout) -> Unit,
+        services: List<HomeAssistantService> = emptyList()
+    ) {
+        composeTestRule.setContent {
+            MaterialTheme {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    StreamButtonEditor(
+                        layout = layout(),
+                        entities = emptyList(),
+                        isLoadingEntities = false,
+                        entityLoadError = null,
+                        onLoadEntities = {},
+                        onLayoutChange = onLayoutChange,
+                        services = services
+                    )
+                }
+            }
+        }
+    }
+
+    private val inPickerSheet = hasAnyAncestor(hasTestTag(PICKER_SHEET_TAG))
 }

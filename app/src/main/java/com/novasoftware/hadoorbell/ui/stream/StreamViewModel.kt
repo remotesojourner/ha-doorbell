@@ -1,6 +1,7 @@
 package com.novasoftware.hadoorbell.ui.stream
 
 import android.content.Context
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.novasoftware.hadoorbell.R
@@ -45,7 +46,7 @@ import java.io.IOException
 import javax.inject.Inject
 
 sealed class UiEvent {
-    data class ShowToast(val message: String, val long: Boolean = false) : UiEvent()
+    data class ShowMessage(val message: String, val long: Boolean = false) : UiEvent()
     sealed class Authentication : UiEvent()
     data class AuthenticateStreamButton(val button: StreamButton) : Authentication()
     class AuthenticateSettings : Authentication()
@@ -84,6 +85,7 @@ class StreamViewModel @Inject constructor(
     private var answerJob: Job? = null
     private var quickReplyLoadJob: Job? = null
     private var pendingAuthentication: UiEvent.Authentication? = null
+    private var answerRequested = false
 
     fun initializeConnection(context: Context) {
         initializeJob?.cancel()
@@ -108,7 +110,9 @@ class StreamViewModel @Inject constructor(
             startButtonAppearanceUpdates(layout)
 
             val instantTwoWay = appPreferences.instantTwoWayAudioFlow.first()
-            val micEnabled = instantTwoWay && !layout.hasQuickReply
+            val answerOnStart = answerRequested
+            answerRequested = false
+            val micEnabled = answerOnStart || instantTwoWay && !layout.hasQuickReply
             _uiState.update { it.copy(isMicEnabled = micEnabled) }
             if (micEnabled) {
                 callAnswered = true
@@ -117,6 +121,27 @@ class StreamViewModel @Inject constructor(
             val signalingClient = webRtcClientFactory.createClient()
             val manager = webRtcManagerFactory.create(context, signalingClient, viewModelScope)
             _uiState.update { it.copy(webRtcManager = manager) }
+
+            if (answerOnStart) {
+                answerJob = viewModelScope.launch {
+                    if (awaitConnectionReady() && isScreenActive) {
+                        runCallAction(callActions.answer, R.string.stream_call_action_answer)
+                    }
+                }
+            } else if (answerRequested) {
+                answerRequested = false
+                answerCall(context)
+            }
+        }
+    }
+
+    /** Starts two-way audio as soon as the stream allows it, for a launch from the Answer action. */
+    fun answerWhenReady(context: Context) {
+        val state = _uiState.value
+        when {
+            state.isMicEnabled -> Unit
+            state.webRtcManager != null -> answerCall(context)
+            else -> answerRequested = true
         }
     }
 
@@ -252,6 +277,7 @@ class StreamViewModel @Inject constructor(
 
     fun teardownConnection() {
         isScreenActive = false
+        answerRequested = false
         initializeJob?.cancel()
         initializeJob = null
         stopButtonAppearanceUpdates()
@@ -302,19 +328,21 @@ class StreamViewModel @Inject constructor(
                 if (!awaitConnectionReady()) {
                     abortFailedCall(context)
                     _uiState.update { it.copy(isMicEnabled = false) }
-                    _uiEvent.emit(UiEvent.ShowToast("Call setup failed: no connection", long = true))
+                    _uiEvent.emit(UiEvent.ShowMessage(appContext.getString(R.string.stream_call_setup_no_connection), long = true))
                     return@launch
                 }
 
                 if (!isScreenActive) return@launch
 
                 callAnswered = true
-                runCallAction(currentState.callActions.answer, label = "Answer")
+                runCallAction(currentState.callActions.answer, R.string.stream_call_action_answer)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(isMicEnabled = false) }
-                _uiEvent.emit(UiEvent.ShowToast("Call setup failed: ${e.message}", long = true))
+                _uiEvent.emit(
+                    UiEvent.ShowMessage(appContext.getString(R.string.stream_call_setup_failed, errorReason(e)), long = true)
+                )
             } finally {
                 _uiState.update { it.copy(isSwitchingModes = false) }
             }
@@ -333,7 +361,7 @@ class StreamViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 withContext(NonCancellable) {
-                    runCallAction(currentState.callActions.hangup, label = "Hang up")
+                    runCallAction(currentState.callActions.hangup, R.string.stream_call_action_hang_up)
                 }
                 if (isScreenActive) {
                     restartConnection(context)
@@ -341,7 +369,9 @@ class StreamViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiEvent.emit(UiEvent.ShowToast("Hang up failed: ${e.message}", long = true))
+                _uiEvent.emit(
+                    UiEvent.ShowMessage(appContext.getString(R.string.stream_hang_up_failed, errorReason(e)), long = true)
+                )
             } finally {
                 _uiState.update { it.copy(isSwitchingModes = false) }
             }
@@ -352,25 +382,33 @@ class StreamViewModel @Inject constructor(
         val action = _uiState.value.callActions.hangup
         viewModelScope.launch {
             withContext(NonCancellable) {
-                runCallAction(action, label = "Hang up")
+                runCallAction(action, R.string.stream_call_action_hang_up)
             }
         }
     }
 
-    private suspend fun runCallAction(action: CallServiceSettings, label: String) {
+    private suspend fun runCallAction(action: CallServiceSettings, @StringRes labelRes: Int) {
         if (action.service.isBlank()) return
+        val label = appContext.getString(labelRes)
 
         val result = withTimeoutOrNull(CALL_ACTION_TIMEOUT_MS) {
             callActionUseCase(action.service, action.entityId, action.data, action.needsResponse)
         }
 
         if (result == null) {
-            _uiEvent.emit(UiEvent.ShowToast("$label action timed out", long = true))
+            _uiEvent.emit(
+                UiEvent.ShowMessage(appContext.getString(R.string.stream_call_action_timed_out, label), long = true)
+            )
             return
         }
 
         result.onSuccess { refreshButtonAppearances(afterAction = true) }.onFailure { error ->
-            _uiEvent.emit(UiEvent.ShowToast("$label action failed: ${error.message}", long = true))
+            _uiEvent.emit(
+                UiEvent.ShowMessage(
+                    appContext.getString(R.string.stream_call_action_failed, label, errorReason(error)),
+                    long = true
+                )
+            )
         }
     }
 
@@ -409,6 +447,12 @@ class StreamViewModel @Inject constructor(
         }
     }
 
+    fun retryConnection(context: Context) {
+        val state = _uiState.value
+        if (!isScreenActive || state.isSwitchingModes || state.errorMessage == null) return
+        viewModelScope.launch { restartConnection(context) }
+    }
+
     fun toggleStreamMute() {
         _uiState.update { it.copy(isStreamMuted = !it.isStreamMuted) }
         val currentState = _uiState.value
@@ -422,7 +466,7 @@ class StreamViewModel @Inject constructor(
             is StreamButtonAction.DoorLock -> when (val lockState = state.lockStates[action.entityId] ?: LockState.Unknown) {
                 LockState.Jammed, LockState.Unknown -> viewModelScope.launch {
                     val message = appContext.getString(R.string.stream_cannot_operate_lock, lockState.name)
-                    _uiEvent.emit(UiEvent.ShowToast(message))
+                    _uiEvent.emit(UiEvent.ShowMessage(message))
                 }
                 LockState.Unlocked, LockState.Unlocking -> executeLockAction(button, action.entityId, unlock = false)
                 else -> requestAuthentication(UiEvent.AuthenticateStreamButton(button))
@@ -527,7 +571,7 @@ class StreamViewModel @Inject constructor(
             }
             result.onSuccess {
                 refreshButtonAppearances(afterAction = true)
-                _uiEvent.emit(UiEvent.ShowToast(appContext.getString(R.string.stream_quick_reply_sent, option)))
+                _uiEvent.emit(UiEvent.ShowMessage(appContext.getString(R.string.stream_quick_reply_sent, option)))
             }.onFailure { showButtonFailure(sheet.button, it) }
         }
     }
@@ -577,7 +621,7 @@ class StreamViewModel @Inject constructor(
 
     private suspend fun showButtonFailure(button: StreamButton, error: Throwable) {
         val message = appContext.getString(R.string.stream_button_failed, button.displayName, errorReason(error))
-        _uiEvent.emit(UiEvent.ShowToast(message, long = true))
+        _uiEvent.emit(UiEvent.ShowMessage(message, long = true))
     }
 
     private fun errorReason(error: Throwable): String =

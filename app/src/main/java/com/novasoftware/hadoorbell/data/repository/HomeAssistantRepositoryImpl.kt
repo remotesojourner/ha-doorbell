@@ -3,6 +3,7 @@ package com.novasoftware.hadoorbell.data.repository
 import com.google.gson.JsonObject
 import com.novasoftware.hadoorbell.data.remote.EntityStateResponse
 import com.novasoftware.hadoorbell.data.remote.ExplicitHomeAssistantConnection
+import com.novasoftware.hadoorbell.data.remote.FRIGATE_INSTANCE_ID
 import com.novasoftware.hadoorbell.data.remote.HomeAssistantApi
 import com.novasoftware.hadoorbell.data.remote.HomeAssistantStateClient
 import com.novasoftware.hadoorbell.data.remote.SetSelectOptionRequest
@@ -69,6 +70,14 @@ class HomeAssistantRepositoryImpl @Inject constructor(
                 .sortedWith(compareBy(HomeAssistantService::domain, HomeAssistantService::service))
         }
 
+    override suspend fun getGo2rtcStreams(url: String, token: String): Result<List<String>> =
+        discover(url, token, "/api/frigate/$FRIGATE_INSTANCE_ID/go2rtc/api/streams") { endpoint, authorization ->
+            api.getJsonObject(endpoint, authorization, ExplicitHomeAssistantConnection)
+                .keySet()
+                .filter(String::isNotBlank)
+                .sortedWith(String.CASE_INSENSITIVE_ORDER)
+        }
+
     private suspend fun <T> discover(
         url: String,
         token: String,
@@ -88,6 +97,13 @@ class HomeAssistantRepositoryImpl @Inject constructor(
 
     private fun accessToken(token: String): String = token.trim().also {
         require(it.isNotEmpty()) { "Enter a Home Assistant access token" }
+    }
+
+    override suspend fun getImage(path: String): Result<ByteArray> = withContext(Dispatchers.IO) {
+        requestResult {
+            require(path.startsWith("/") && !path.startsWith("//")) { "Images must use a Home Assistant path" }
+            api.download(path).use { it.bytes() }
+        }
     }
 
     override suspend fun getEntityState(entityId: String): Result<String> = withContext(Dispatchers.IO) {

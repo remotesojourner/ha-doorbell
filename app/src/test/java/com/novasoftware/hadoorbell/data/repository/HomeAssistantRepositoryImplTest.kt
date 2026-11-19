@@ -131,6 +131,23 @@ class HomeAssistantRepositoryImplTest {
     }
 
     @Test
+    fun `go2rtc streams are listed through the Frigate integration`() = runTest {
+        coEvery {
+            api.getJsonObject(
+                "https://draft.home:8123/api/frigate/frigate/go2rtc/api/streams".toHttpUrl(),
+                "Bearer draft_token",
+                ExplicitHomeAssistantConnection
+            )
+        } returns JsonParser.parseString(
+            """{"front_door": {"producers": []}, "Back_yard": {}, "driveway_sub": {}}"""
+        ).asJsonObject
+
+        val streams = repository.getGo2rtcStreams("draft.home:8123", " draft_token ").getOrThrow()
+
+        assertEquals(listOf("Back_yard", "driveway_sub", "front_door"), streams)
+    }
+
+    @Test
     fun `service discovery reads the catalog from the draft connection`() = runTest {
         val serviceData = JsonParser.parseString("""
             {

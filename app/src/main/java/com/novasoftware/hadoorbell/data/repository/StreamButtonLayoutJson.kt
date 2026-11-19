@@ -14,13 +14,21 @@ internal object StreamButtonLayoutJson {
         addProperty("buttonVisibility", true)
         add("top", encodeRow(layout.top))
         add("bottom", encodeRow(layout.bottom))
+        addProperty("soundPosition", layout.soundPosition)
+        addProperty("callPosition", layout.callPosition)
     }.toString()
 
     fun decode(json: String): StreamButtonLayout? = runCatching {
         val layout = JsonParser.parseString(json).asJsonObject
+        val soundPosition = layout.optionalInt("soundPosition")
+        val callPosition = layout.optionalInt("callPosition")
+        val hasControlOrder = soundPosition != null && callPosition != null &&
+            soundPosition >= 0 && callPosition >= 0 && soundPosition != callPosition
         StreamButtonLayout(
             top = decodeRow(layout.getAsJsonArray("top")),
-            bottom = decodeRow(layout.getAsJsonArray("bottom"))
+            bottom = decodeRow(layout.getAsJsonArray("bottom")),
+            soundPosition = if (hasControlOrder) soundPosition else StreamButtonLayout.DEFAULT_SOUND_POSITION,
+            callPosition = if (hasControlOrder) callPosition else StreamButtonLayout.DEFAULT_CALL_POSITION
         )
     }.getOrNull()
 
@@ -189,6 +197,10 @@ internal object StreamButtonLayoutJson {
     private fun JsonObject.optionalString(key: String): String? =
         get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
             ?.asString?.trim()?.takeIf { it.isNotEmpty() }
+
+    private fun JsonObject.optionalInt(key: String): Int? =
+        get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asNumber?.toDouble()
+            ?.takeIf { it % 1.0 == 0.0 && it in 0.0..Int.MAX_VALUE.toDouble() }?.toInt()
 
     private fun JsonObject.boolean(key: String): Boolean =
         getAsJsonPrimitive(key).takeIf { it.isBoolean }?.asBoolean

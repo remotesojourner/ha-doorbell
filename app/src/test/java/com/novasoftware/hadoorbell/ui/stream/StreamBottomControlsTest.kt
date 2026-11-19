@@ -6,9 +6,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasProgressBarRangeInfo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -162,10 +166,79 @@ class StreamBottomControlsTest {
         assertNull(button.copy(stateEntityId = null).backgroundForState(HomeAssistantEntityAppearance("Ready")))
     }
 
+    @Test
+    fun `sound and call follow the order chosen in settings`() {
+        val chime = StreamButton(
+            "chime", StreamButtonAction.CallService("button", "press", "button.chime"), entityName = "Chime"
+        )
+        showControls(
+            400.dp,
+            listOf(chime),
+            layout = StreamButtonLayout(bottom = listOf(chime), soundPosition = 2, callPosition = 0)
+        )
+
+        val lefts = listOf("Call", "Chime", "Mute Stream").map {
+            composeTestRule.onNodeWithContentDescription(it).getUnclippedBoundsInRoot().left
+        }
+        assertEquals(lefts.sorted(), lefts)
+    }
+
+    @Test
+    fun `sound and call wait for the stream while custom actions stay available`() {
+        val chime = StreamButton(
+            "chime", StreamButtonAction.CallService("button", "press", "button.chime"), entityName = "Chime"
+        )
+        showControls(400.dp, listOf(chime))
+
+        composeTestRule.onNodeWithContentDescription("Call").assertIsNotEnabled()
+        composeTestRule.onNodeWithContentDescription("Mute Stream").assertIsNotEnabled()
+        composeTestRule.onNodeWithContentDescription("Chime").assertIsEnabled()
+    }
+
+    @Test
+    fun `a running action shows progress until Home Assistant responds`() {
+        val chime = StreamButton(
+            "chime", StreamButtonAction.CallService("button", "press", "button.chime"), entityName = "Chime"
+        )
+        val state = mutableStateOf(
+            StreamUiState(
+                streamButtonLayout = StreamButtonLayout(bottom = listOf(chime)),
+                isStreamButtonLayoutReady = true,
+                runningStreamButtonIds = setOf("chime")
+            )
+        )
+        composeTestRule.setContent {
+            MaterialTheme {
+                Box(Modifier.width(400.dp)) {
+                    StreamBottomControls(
+                        uiState = state.value,
+                        pulseScale = 1f,
+                        onSoundClick = {},
+                        onCallClick = {},
+                        onButtonClick = {}
+                    )
+                }
+            }
+        }
+
+        val control = composeTestRule.onNodeWithContentDescription("Chime")
+        control.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Running"))
+        control.assertIsNotEnabled()
+        composeTestRule.onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)).assertExists()
+
+        composeTestRule.runOnIdle {
+            state.value = state.value.copy(runningStreamButtonIds = emptySet())
+        }
+        control.assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
+        control.assertIsEnabled()
+        composeTestRule.onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)).assertDoesNotExist()
+    }
+
     private fun showControls(
         width: Dp,
         buttons: List<StreamButton>,
         entityAppearances: Map<String, HomeAssistantEntityAppearance> = emptyMap(),
+        layout: StreamButtonLayout = StreamButtonLayout(bottom = buttons),
         onButtonClick: (StreamButton) -> Unit = {}
     ) {
         composeTestRule.setContent {
@@ -173,7 +246,7 @@ class StreamBottomControlsTest {
                 Box(Modifier.width(width)) {
                     StreamBottomControls(
                         uiState = StreamUiState(
-                            streamButtonLayout = StreamButtonLayout(bottom = buttons),
+                            streamButtonLayout = layout,
                             entityAppearances = entityAppearances,
                             isStreamButtonLayoutReady = true
                         ),
