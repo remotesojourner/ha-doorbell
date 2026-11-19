@@ -1,0 +1,35 @@
+<resources>
+    <string name="settings_connection_save">Connect</string>
+    <string name="settings_connection_required">Save the Home Assistant connection to edit the stream settings.</string>
+    <string name="settings_connection_checking">Checking the Home Assistant connection…</string>
+    <string name="settings_connection_verified">Home Assistant connection verified</string>
+    <string name="settings_connection_request_error">Could not connect to Home Assistant. Check the connection and try again.</string>
+    <string name="settings_connection_save_error">Could not save the Home Assistant connection. Try again.</string>
+
+    <string name="settings_connection_connected">Connected to Home Assistant</string>
+    <string name="settings_connection_change">Change</string>
+    <string name="settings_back">Back</string>
+    <string name="settings_discard_title">Discard unsaved changes?</string>
+    <string name="settings_discard_message">Changes you made here have not been saved.</string>
+    <string name="settings_discard">Discard</string>
+    <string name="settings_keep_editing">Keep editing</string>
+    <string name="settings_url_placeholder" translatable="false">https://192.168.1.10:8123</string>
+    <string name="settings_stream_source_placeholder" translatable="false">front_door_camera</string>
+    <string name="settings_call_answer_section">When you answer</string>
+    <string name="settings_call_hangup_section">When you hang up</string>
+    <string name="settings_choose_stream">Choose a go2rtc stream</string>
+    <string name="settings_search_streams">Search streams</string>
+    <string name="settings_loading_streams">Loading streams…</string>
+    <string name="settings_no_streams">Frigate did not report any go2rtc streams.</string>
+    <string name="settings_no_stream_matches">No streams match your search.</string>
+    <string name="settings_streams_request_error">Could not load streams from Frigate. Check that the Frigate integration is set up, or type the stream name.</string>
+    <string name="settings_doorbell_alerts">Doorbell alerts</string>
+    <string name="settings_alerts_description">To have the doorbell ring like a phone call, allow these and use the HA Doorbell Ring blueprint in Home Assistant.</string>
+    <string name="settings_alerts_notifications">Notifications</string>
+    <string name="settings_alerts_full_screen">Full-screen ringing</string>
+    <string name="settings_alerts_full_screen_description">Shows the ring over the lock screen like an incoming call.</string>
+    <string name="settings_alerts_allowed">Allowed</string>
+    <string name="settings_alerts_allow">Allow</string>
+    <string name="settings_alerts_test">Test ring</string>
+    <string name="permission_microphone_required">Please grant microphone permission to continue.</string>
+</resources>

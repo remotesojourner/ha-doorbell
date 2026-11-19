@@ -1,23 +1,22 @@
 blueprint:
-  name: HA Doorbell Fast Notification
-  description: "Downloads a fast snapshot using the Downloader integration and sends an actionable notification to your device that opens the HA Doorbell app."
+  name: HA Doorbell Notification
+  description: >-
+    Sends a notification through the Home Assistant Companion app as soon as the doorbell is pressed, then
+    quietly adds a camera snapshot when it is ready. Tapping the notification opens HA Doorbell, optionally
+    straight into a call, and it can include Answer and door buttons.
   domain: automation
+  source_url: https://github.com/remotesojourner/ha-doorbell/blob/main/blueprints/doorbell_notification.yaml
   input:
     doorbell_sensor:
       name: Doorbell Sensor
-      description: The binary sensor that triggers when the doorbell is pressed.
+      description: The binary sensor that turns on when the doorbell is pressed.
       selector:
         entity:
           domain: binary_sensor
     notify_service:
       name: Notify Service
-      description: The notification service to use (e.g., notify.mobile_devices or notify.mobile_app_my_phone).
+      description: The Companion app notify service, or a group of them (e.g. notify.mobile_app_my_phone or notify.mobile_devices).
       default: notify.mobile_devices
-      selector:
-        text:
-    camera_snapshot_url:
-      name: Camera Snapshot URL
-      description: The raw HTTP URL to grab a fast snapshot directly from your camera (e.g., Reolink snapshot CGI API).
       selector:
         text:
     notification_title:
@@ -25,9 +24,69 @@ blueprint:
       default: There is somebody at the door!
       selector:
         text:
+    tap_action:
+      name: When the notification is tapped
+      default: stream
+      selector:
+        select:
+          options:
+            - label: Open the camera
+              value: stream
+            - label: Open the camera and start talking
+              value: answer
+    show_answer_button:
+      name: Answer button
+      description: Adds an Answer button that opens HA Doorbell and starts two-way audio.
+      default: true
+      selector:
+        boolean:
+    answer_button_title:
+      name: Answer button title
+      default: Answer
+      selector:
+        text:
+    door_action:
+      name: Door button actions (optional)
+      description: >-
+        Actions to run when the door button is pressed, for example unlocking the front door. Leave empty to
+        hide the button. On Android 12 and newer the phone must be unlocked to use it.
+      default: []
+      selector:
+        action:
+    door_button_title:
+      name: Door button title
+      default: Unlock
+      selector:
+        text:
+    camera_snapshot_url:
+      name: Camera Snapshot URL (optional)
+      description: >-
+        The raw HTTP URL that returns a snapshot directly from your camera (e.g. the Reolink snapshot CGI API).
+        The snapshot is added to the notification once it has downloaded. Leave empty to skip it.
+      default: ""
+      selector:
+        text:
+    snapshot_file_name:
+      name: Snapshot File Name
+      description: The filename to save the snapshot as.
+      default: snapshot_doorbell.jpg
+      selector:
+        text:
+    downloader_path:
+      name: Downloader WWW Subdirectory
+      description: The subfolder inside your www folder where the Downloader saves snapshots (e.g. doorbell).
+      default: doorbell
+      selector:
+        text:
+    wait_timeout:
+      name: Snapshot Wait Timeout
+      description: How long to wait for the snapshot download (HH:MM:SS). The notification has already been sent.
+      default: "00:00:30"
+      selector:
+        text:
     notification_channel:
       name: Android Notification Channel
-      description: The notification channel ID for Android devices (e.g., alarm_stream).
+      description: The notification channel ID (e.g. alarm_stream to use the alarm volume and bypass Do Not Disturb).
       default: alarm_stream
       selector:
         text:
@@ -52,36 +111,69 @@ blueprint:
             - low
             - min
             - max
-    snapshot_file_name:
-      name: Snapshot File Name
-      description: The filename to save the snapshot as (e.g., snapshot_doorbell.jpg).
-      default: snapshot_doorbell.jpg
+    notification_timeout:
+      name: Remove After
+      description: Removes the notification after this many seconds. 0 keeps it until you dismiss it.
+      default: 0
       selector:
-        text:
-    downloader_path:
-      name: Downloader WWW Subdirectory
-      description: The subfolder inside your www folder where snapshots are saved (e.g., doorbell).
-      default: doorbell
-      selector:
-        text:
-    wait_timeout:
-      name: Download Wait Timeout
-      description: Maximum time to wait for the snapshot download to complete (HH:MM:SS).
-      default: "00:10:00"
-      selector:
-        text:
+        number:
+          min: 0
+          max: 3600
+          unit_of_measurement: s
+          mode: box
 
-mode: single
+mode: restart
 
 variables:
-  camera_snapshot_url: !input camera_snapshot_url
   notification_title: !input notification_title
-  notification_channel: !input notification_channel
-  notification_ttl: !input notification_ttl
-  notification_priority: !input notification_priority
+  tap_action: !input tap_action
+  show_answer_button: !input show_answer_button
+  answer_button_title: !input answer_button_title
+  door_action: !input door_action
+  door_button_title: !input door_button_title
+  camera_snapshot_url: !input camera_snapshot_url
   snapshot_file_name: !input snapshot_file_name
   downloader_path: !input downloader_path
   wait_timeout: !input wait_timeout
+  notification_channel: !input notification_channel
+  notification_ttl: !input notification_ttl
+  notification_priority: !input notification_priority
+  notification_timeout: !input notification_timeout
+  door_action_id: "HA_DOORBELL_DOOR_{{ context.id }}"
+  door_wait_seconds: "{{ notification_timeout | int if notification_timeout | int > 0 else 900 }}"
+  alert_message: "{{ as_timestamp(now()) | timestamp_custom('%d:%m %H:%M', true) }}"
+  click_action: "intent://{{ tap_action }}#Intent;scheme=hadoorbell;package=com.novasoftware.hadoorbell;end"
+  notification_actions: >-
+    {% set ns = namespace(items=[]) %}
+    {% if show_answer_button %}
+      {% set ns.items = ns.items + [{
+        'action': 'URI',
+        'title': answer_button_title,
+        'uri': 'intent://answer#Intent;scheme=hadoorbell;package=com.novasoftware.hadoorbell;end'
+      }] %}
+    {% endif %}
+    {% if door_action | count > 0 %}
+      {% set ns.items = ns.items + [{
+        'action': door_action_id,
+        'title': door_button_title,
+        'authenticationRequired': true
+      }] %}
+    {% endif %}
+    {{ ns.items }}
+  notification_data: >-
+    {% set data = {
+      'ttl': notification_ttl | int,
+      'priority': notification_priority,
+      'channel': notification_channel,
+      'tag': 'ha_doorbell',
+      'notification_icon': 'mdi:doorbell-video',
+      'clickAction': click_action,
+      'actions': notification_actions
+    } %}
+    {% if notification_timeout | int > 0 %}
+      {% set data = dict(data, timeout=notification_timeout | int) %}
+    {% endif %}
+    {{ data }}
 
 triggers:
   - trigger: state
@@ -90,24 +182,56 @@ triggers:
     to: "on"
 
 actions:
-  - action: downloader.download_file
-    data:
-      url: "{{ camera_snapshot_url }}"
-      filename: "{{ snapshot_file_name }}"
-      overwrite: true
-  - wait_for_trigger:
-      - trigger: event
-        event_type: downloader_download_completed
-    timeout: "{{ wait_timeout }}"
-    continue_on_timeout: false
+  # Alert right away, before the snapshot has downloaded.
   - action: !input notify_service
     data:
       title: "{{ notification_title }}"
-      message: "{{ as_timestamp(now()) | timestamp_custom('%d:%m %H:%M', true) }}"
-      data:
-        ttl: "{{ notification_ttl }}"
-        priority: "{{ notification_priority }}"
-        channel: "{{ notification_channel }}"
-        image: "/local/{{ downloader_path }}/{{ snapshot_file_name }}"
-        notification_icon: mdi:doorbell-video
-        clickAction: "app://com.novasoftware.hadoorbell"
+      message: "{{ alert_message }}"
+      data: "{{ notification_data }}"
+  - parallel:
+      # Replace the notification with one that includes the snapshot, without alerting again.
+      - if:
+          - condition: template
+            value_template: "{{ camera_snapshot_url | length > 0 }}"
+        then:
+          - action: downloader.download_file
+            data:
+              url: "{{ camera_snapshot_url }}"
+              filename: "{{ snapshot_file_name }}"
+              overwrite: true
+          - wait_for_trigger:
+              - trigger: event
+                event_type: downloader_download_completed
+            timeout: "{{ wait_timeout }}"
+            continue_on_timeout: true
+          - if:
+              - condition: template
+                value_template: "{{ wait.trigger is not none }}"
+            then:
+              - action: !input notify_service
+                data:
+                  title: "{{ notification_title }}"
+                  message: "{{ alert_message }}"
+                  data: >-
+                    {{ dict(notification_data,
+                            image='/local/' ~ downloader_path ~ '/' ~ snapshot_file_name,
+                            alert_once=true) }}
+      # Run the door actions when the door button is pressed.
+      - if:
+          - condition: template
+            value_template: "{{ door_action | count > 0 }}"
+        then:
+          - wait_for_trigger:
+              - trigger: event
+                event_type: mobile_app_notification_action
+                event_data:
+                  action: "{{ door_action_id }}"
+            timeout:
+              seconds: "{{ door_wait_seconds }}"
+            continue_on_timeout: true
+          - if:
+              - condition: template
+                value_template: "{{ wait.trigger is not none }}"
+            then:
+              - choose: []
+                default: !input door_action

@@ -32,6 +32,18 @@ To manually set the version during a local build, you can pass the version prope
 ./gradlew assembleRelease -PversionCode=123 -PversionName=1.2.3
 ```
 
+## Releasing
+You never need to push tags by hand. The **Build Release APK** workflow creates the tag and the GitHub release itself:
+
+- **Every push to `main`** that changes the app is released automatically. The version follows the commit messages since the last release: `feat:` bumps the minor version, `fix:`, `perf:`, `refactor:` and `revert:` bump the patch version, and a `!` or `BREAKING CHANGE:` bumps the major version. Pushes that only change documentation, blueprints, screenshots, Fastlane metadata, assets or workflows are not built.
+- **To release on demand**, open **Actions → Build Release APK → Run workflow**, choose `main`, tick **Publish a GitHub release**, and pick a **Version bump**:
+  - `auto` uses the version worked out from the commit messages.
+  - `patch`, `minor` or `major` bump the latest release tag, for example `v0.5.1` becomes `v0.5.2`, `v0.6.0` or `v1.0.0`.
+
+  The run fails without releasing if the version has already been released, for example `auto` with no new commits; run it again with a bump. Later automatic releases continue from the new version.
+
+Running the workflow without **Publish a GitHub release** only builds and tests, and uploads the APK as a workflow artifact.
+
 ## Signing the APK
 To sign the application with your own keystore:
 1. Generate a keystore if you don't have one:

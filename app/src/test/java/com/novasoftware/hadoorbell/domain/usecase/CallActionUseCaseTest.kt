@@ -1,5 +1,6 @@
 package com.novasoftware.hadoorbell.domain.usecase
 
+import com.google.gson.JsonObject
 import com.novasoftware.hadoorbell.domain.repository.HomeAssistantRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -35,6 +36,16 @@ class CallActionUseCaseTest {
 
         assertTrue(result.isSuccess)
         coVerify { repository.callService("script", "doorbell_answer", null) }
+    }
+
+    @Test
+    fun `forwards service data and response requirement with an optional target`() = runTest {
+        val data = JsonObject().apply { addProperty("message", "Visitor") }
+
+        val result = callActionUseCase("notify.doorbell", data = data, needsResponse = true)
+
+        assertTrue(result.isSuccess)
+        coVerify { repository.callService("notify", "doorbell", null, data, true) }
     }
 
     @Test

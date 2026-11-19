@@ -26,11 +26,10 @@ class MainViewModel @Inject constructor(
 
     private fun determineStartDestination() {
         viewModelScope.launch {
-            val url = appPreferences.haUrlFlow.first()
-            val token = appPreferences.haTokenFlow.first()
+            val (url, token) = appPreferences.homeAssistantConnectionFlow.first()
             val source = appPreferences.streamSourceFlow.first()
 
-            _startDestination.value = if (!url.isNullOrBlank() && !token.isNullOrBlank() && !source.isNullOrBlank()) {
+            _startDestination.value = if (url.isNotBlank() && token.isNotBlank() && !source.isNullOrBlank()) {
                 Navigation.ROUTE_STREAM
             } else {
                 Navigation.ROUTE_SETTINGS

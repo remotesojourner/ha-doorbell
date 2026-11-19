@@ -15,8 +15,7 @@ class WebRtcClientFactory @Inject constructor(
     private val gson: Gson
 ) {
     suspend fun createClient(): HomeAssistantWebRtcClient {
-        val url = appPreferences.haUrlFlow.first() ?: ""
-        val token = appPreferences.haTokenFlow.first() ?: ""
+        val (url, token) = appPreferences.homeAssistantConnectionFlow.first()
         val streamSource = appPreferences.streamSourceFlow.first() ?: ""
         val provider = appPreferences.webrtcProviderFlow.first()
         return HomeAssistantWebRtcClient(url, token, streamSource, provider, okHttpClient, gson)

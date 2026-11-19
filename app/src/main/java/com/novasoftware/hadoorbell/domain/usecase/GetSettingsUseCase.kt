@@ -1,9 +1,12 @@
 package com.novasoftware.hadoorbell.domain.usecase
 
+import com.novasoftware.hadoorbell.domain.model.CallActions
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantConnection
+import com.novasoftware.hadoorbell.domain.model.Settings
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
+import com.novasoftware.hadoorbell.domain.repository.SettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
-import com.novasoftware.hadoorbell.domain.repository.SettingsRepository
-import com.novasoftware.hadoorbell.domain.model.Settings
 import javax.inject.Inject
 
 class GetSettingsUseCase @Inject constructor(
@@ -11,34 +14,30 @@ class GetSettingsUseCase @Inject constructor(
 ) {
     operator fun invoke(): Flow<Settings> {
         return combine(
-            repository.haUrlFlow,
-            repository.haTokenFlow,
+            repository.homeAssistantConnectionFlow,
             repository.streamSourceFlow,
-            repository.quickReplyEntityIdFlow,
-            repository.lockEntityIdFlow,
             repository.instantTwoWayAudioFlow,
             repository.webrtcProviderFlow,
-            repository.doorEntityIdFlow,
-            repository.doorServiceFlow,
-            repository.answerActionServiceFlow,
-            repository.answerActionEntityIdFlow,
-            repository.hangupActionServiceFlow,
-            repository.hangupActionEntityIdFlow
+            repository.callActionsFlow,
+            repository.streamButtonLayoutFlow
         ) { args: Array<Any?> ->
+            val connection = args[0] as HomeAssistantConnection
+            val callActions = args[4] as CallActions
             Settings(
-                url = args[0] as? String ?: "",
-                token = args[1] as? String ?: "",
-                streamSource = args[2] as? String ?: "",
-                quickReplyEntityId = args[3] as? String ?: "",
-                lockEntityId = args[4] as? String ?: "",
-                instantTwoWayAudio = args[5] as? Boolean ?: false,
-                webrtcProvider = args[6] as? String ?: "frigate",
-                doorEntityId = args[7] as? String ?: "",
-                doorService = args[8] as? String ?: "",
-                answerActionService = args[9] as? String ?: "",
-                answerActionEntityId = args[10] as? String ?: "",
-                hangupActionService = args[11] as? String ?: "",
-                hangupActionEntityId = args[12] as? String ?: ""
+                url = connection.url,
+                token = connection.token,
+                streamSource = args[1] as? String ?: "",
+                instantTwoWayAudio = args[2] as? Boolean ?: false,
+                webrtcProvider = args[3] as? String ?: "frigate",
+                answerActionService = callActions.answer.service,
+                answerActionEntityId = callActions.answer.entityId,
+                hangupActionService = callActions.hangup.service,
+                hangupActionEntityId = callActions.hangup.entityId,
+                streamButtonLayout = args[5] as StreamButtonLayout,
+                answerActionData = callActions.answer.data,
+                hangupActionData = callActions.hangup.data,
+                answerActionNeedsResponse = callActions.answer.needsResponse,
+                hangupActionNeedsResponse = callActions.hangup.needsResponse
             )
         }
     }

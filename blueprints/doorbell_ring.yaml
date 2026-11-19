@@ -1,0 +1,91 @@
+blueprint:
+  name: HA Doorbell Ring
+  description: >-
+    Rings HA Doorbell on your phone like an incoming call when the doorbell is pressed. A locked phone shows a
+    full-screen ring with Answer and Decline; a phone in use shows a ringing notification with the same buttons.
+    The ring is delivered through the Home Assistant Companion app, so HA Doorbell does not run in the background.
+    In HA Doorbell, open Doorbell Setup → Doorbell alerts and allow notifications and full-screen ringing first.
+  domain: automation
+  source_url: https://github.com/remotesojourner/ha-doorbell/blob/main/blueprints/doorbell_ring.yaml
+  input:
+    doorbell_sensor:
+      name: Doorbell Sensor
+      description: The binary sensor that turns on when the doorbell is pressed.
+      selector:
+        entity:
+          domain: binary_sensor
+    notify_service:
+      name: Notify Service
+      description: The Companion app notify service, or a group of them (e.g. notify.mobile_app_my_phone or notify.mobile_devices).
+      default: notify.mobile_devices
+      selector:
+        text:
+    ring_title:
+      name: Ring Title
+      default: Someone is at the door
+      selector:
+        text:
+    ring_message:
+      name: Ring Message (optional)
+      description: A second line under the title. Leave empty for the app's default.
+      default: ""
+      selector:
+        text:
+    ring_timeout:
+      name: Ring For
+      description: How long the phone rings before it stops on its own.
+      default: 45
+      selector:
+        number:
+          min: 5
+          max: 600
+          unit_of_measurement: s
+          mode: box
+    snapshot_path:
+      name: Snapshot Path (optional)
+      description: >-
+        A Home Assistant path to an image shown behind the ring screen, for example
+        /api/camera_proxy/camera.front_door or /local/doorbell/snapshot_doorbell.jpg. HA Doorbell loads it with
+        its own Home Assistant connection. Leave empty for no snapshot.
+      default: ""
+      selector:
+        text:
+
+mode: restart
+
+variables:
+  ring_title: !input ring_title
+  ring_message: !input ring_message
+  ring_timeout: !input ring_timeout
+  snapshot_path: !input snapshot_path
+  # The Companion app splits extras on commas and colons, so values containing them are URL encoded.
+  ring_extras: >-
+    {% macro extra(name, value) -%}
+      {%- if ',' in value or ':' in value -%}
+        {{ name }}:{{ value | urlencode }}:String.urlencoded
+      {%- else -%}
+        {{ name }}:{{ value }}
+      {%- endif -%}
+    {%- endmacro %}
+    {% set ns = namespace(items=[extra('title', ring_title), 'timeout:' ~ (ring_timeout | int)]) %}
+    {% if ring_message | length > 0 %}{% set ns.items = ns.items + [extra('message', ring_message)] %}{% endif %}
+    {% if snapshot_path | length > 0 %}{% set ns.items = ns.items + [extra('image', snapshot_path)] %}{% endif %}
+    {{ ns.items | join(',') }}
+
+triggers:
+  - trigger: state
+    entity_id: !input doorbell_sensor
+    from: "off"
+    to: "on"
+
+actions:
+  - action: !input notify_service
+    data:
+      message: command_broadcast_intent
+      data:
+        intent_package_name: com.novasoftware.hadoorbell
+        intent_class_name: com.novasoftware.hadoorbell.ring.RingReceiver
+        intent_action: com.novasoftware.hadoorbell.RING
+        intent_extras: "{{ ring_extras }}"
+        ttl: 0
+        priority: high

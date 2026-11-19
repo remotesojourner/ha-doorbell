@@ -105,6 +105,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.biometric)
+    implementation(libs.zxing.android.embedded)
 
     // DataStore Preferences
     implementation(libs.androidx.datastore.preferences)
@@ -150,4 +151,33 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+// Lint, KSP, Hilt and the unit tests depend on older versions of these libraries that have known
+// vulnerabilities. None of them are packaged in the app. Requests for older versions are raised to
+// the patched ones, and newer requests are left alone.
+val patchedLibraries = listOf(libs.guava, libs.commons.lang3, libs.httpclient).map { it.get() }
+
+configurations.configureEach {
+    resolutionStrategy.eachDependency {
+        val patched = patchedLibraries.find { it.group == requested.group && it.name == requested.name }
+            ?: return@eachDependency
+        val requestedVersion = requested.version?.takeIf(String::isNotBlank) ?: return@eachDependency
+        val patchedVersion = patched.version ?: return@eachDependency
+        if (compareVersions(requestedVersion, patchedVersion) < 0) {
+            useVersion(patchedVersion)
+            because("Older versions have known vulnerabilities")
+        }
+    }
+}
+
+fun compareVersions(first: String, second: String): Int {
+    fun numbers(version: String) = Regex("[0-9]+").findAll(version).map { it.value.toInt() }.toList()
+    val a = numbers(first)
+    val b = numbers(second)
+    for (index in 0 until maxOf(a.size, b.size)) {
+        val difference = a.getOrElse(index) { -1 }.compareTo(b.getOrElse(index) { -1 })
+        if (difference != 0) return difference
+    }
+    return 0
 }

@@ -1,6 +1,7 @@
 package com.novasoftware.hadoorbell
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.compose.setContent
@@ -11,17 +12,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.novasoftware.hadoorbell.ring.DoorbellRing
 import com.novasoftware.hadoorbell.ui.Navigation
 import com.novasoftware.hadoorbell.ui.settings.SettingsScreen
 import com.novasoftware.hadoorbell.ui.stream.StreamScreen
@@ -31,9 +35,11 @@ import dagger.hilt.android.AndroidEntryPoint
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
     private var permissionGranted by mutableStateOf(false)
+    private var launchRequest by mutableStateOf<DoorbellLaunch?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) launchRequest = DoorbellLaunch.from(intent)
         
         val requestPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestPermission()
@@ -52,7 +58,7 @@ class MainActivity : FragmentActivity() {
         setContent {
             if (!permissionGranted) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Please grant microphone permission to continue.")
+                    Text(stringResource(R.string.permission_microphone_required))
                 }
                 return@setContent
             }
@@ -67,6 +73,13 @@ class MainActivity : FragmentActivity() {
 
                     startDestination?.let { startDest ->
                         val navController = rememberNavController()
+                        val request = launchRequest
+                        LaunchedEffect(request) {
+                            if (request == null) return@LaunchedEffect
+                            val showingStream = navController.currentDestination?.route == Navigation.ROUTE_STREAM ||
+                                navController.popBackStack(Navigation.ROUTE_STREAM, inclusive = false)
+                            if (!showingStream || !request.answer) launchRequest = null
+                        }
                         NavHost(navController = navController, startDestination = startDest) {
                             composable(Navigation.ROUTE_SETTINGS) {
                                 val settingsViewModel: com.novasoftware.hadoorbell.ui.settings.SettingsViewModel = androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel()
@@ -88,11 +101,15 @@ class MainActivity : FragmentActivity() {
                                     viewModel = settingsViewModel
                                 )
                             }
-                            composable(Navigation.ROUTE_STREAM) {
+                            composable(Navigation.ROUTE_STREAM) { streamEntry ->
                                 val streamViewModel: com.novasoftware.hadoorbell.ui.stream.StreamViewModel = androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel()
                                 StreamScreen(
+                                    answerRequest = launchRequest?.takeIf { it.answer }?.id,
+                                    onAnswerRequestHandled = { launchRequest = null },
                                     onNavigateToSettings = {
-                                        navController.navigate(Navigation.ROUTE_SETTINGS)
+                                        if (navController.currentBackStackEntry == streamEntry && !isFinishing && !isDestroyed) {
+                                            navController.navigate(Navigation.ROUTE_SETTINGS)
+                                        }
                                     },
                                     onExit = {
                                         finish() // Exit the app
@@ -105,5 +122,16 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        DoorbellLaunch.from(intent)?.let { launchRequest = it }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        DoorbellRing.cancel(this)
     }
 }

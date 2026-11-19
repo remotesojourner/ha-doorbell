@@ -1,0 +1,41 @@
+<resources>
+    <string name="stream_button_auth_title">Run %1$s</string>
+    <string name="stream_button_auth_subtitle">Authenticate to run this action</string>
+    <string name="stream_button_unknown_error">Unknown error</string>
+    <string name="stream_button_failed">%1$s failed: %2$s</string>
+    <string name="stream_quick_reply_no_options">No quick reply options found for this entity.</string>
+    <string name="stream_quick_reply_sent">Sent: %1$s</string>
+    <string name="stream_lock_locked">Locked</string>
+    <string name="stream_lock_unlocked">Unlocked</string>
+    <string name="stream_lock_locking">Locking</string>
+    <string name="stream_lock_unlocking">Unlocking</string>
+    <string name="stream_lock_jammed">Jammed</string>
+    <string name="stream_lock_unknown">Lock status unknown</string>
+
+    <string name="ring_channel_name">Doorbell rings</string>
+    <string name="ring_channel_description">Rings like a phone call when someone presses the doorbell.</string>
+    <string name="ring_default_title">Someone is at the door</string>
+    <string name="ring_default_message">Answer to talk, or view the camera first.</string>
+    <string name="ring_answer">Answer</string>
+    <string name="ring_decline">Decline</string>
+    <string name="ring_watch">View camera</string>
+    <string name="ring_snapshot">Doorbell snapshot</string>
+    <string name="ring_test_title">Test ring</string>
+    <string name="ring_test_message">This is how a doorbell press will ring.</string>
+    <string name="stream_settings">Settings</string>
+    <string name="stream_close">Close</string>
+    <string name="stream_mute">Mute Stream</string>
+    <string name="stream_unmute">Unmute Stream</string>
+    <string name="stream_end_call">End Call</string>
+    <string name="stream_video_fill">Fill screen</string>
+    <string name="stream_video_fit">Fit video to screen</string>
+    <string name="stream_video_reset_zoom">Reset zoom</string>
+    <string name="stream_button_running">Running</string>
+    <string name="stream_call_setup_no_connection">Call setup failed: no connection</string>
+    <string name="stream_call_setup_failed">Call setup failed: %1$s</string>
+    <string name="stream_hang_up_failed">Hang up failed: %1$s</string>
+    <string name="stream_call_action_answer">Answer</string>
+    <string name="stream_call_action_hang_up">Hang up</string>
+    <string name="stream_call_action_timed_out">%1$s action timed out</string>
+    <string name="stream_call_action_failed">%1$s action failed: %2$s</string>
+</resources>

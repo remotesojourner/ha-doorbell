@@ -7,79 +7,102 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.google.gson.JsonObject
+import com.google.gson.JsonParseException
+import com.google.gson.JsonParser
+import com.novasoftware.hadoorbell.domain.model.CallActions
+import com.novasoftware.hadoorbell.domain.model.CallServiceSettings
+import com.novasoftware.hadoorbell.domain.model.HomeAssistantConnection
+import com.novasoftware.hadoorbell.domain.model.StreamButtonLayout
+import com.novasoftware.hadoorbell.domain.model.normalizeHomeAssistantUrl
 import com.novasoftware.hadoorbell.domain.repository.SettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "settings",
+    produceMigrations = { listOf(StreamButtonLayoutMigration) }
+)
 
 class SettingsRepositoryImpl(private val context: Context) : SettingsRepository {
     companion object {
         val HA_URL = stringPreferencesKey("ha_url")
         val HA_TOKEN = stringPreferencesKey("ha_token")
         val STREAM_SOURCE = stringPreferencesKey("stream_source")
-        val QUICK_REPLY_ENTITY_ID = stringPreferencesKey("quick_reply_entity_id")
-        val LOCK_ENTITY_ID = stringPreferencesKey("lock_entity_id")
         val INSTANT_TWO_WAY_AUDIO = booleanPreferencesKey("instant_two_way_audio")
         val WEBRTC_PROVIDER = stringPreferencesKey("webrtc_provider")
-        val DOOR_ENTITY_ID = stringPreferencesKey("door_entity_id")
-        val DOOR_SERVICE = stringPreferencesKey("door_service")
         val ANSWER_ACTION_SERVICE = stringPreferencesKey("answer_action_service")
         val ANSWER_ACTION_ENTITY_ID = stringPreferencesKey("answer_action_entity_id")
+        val ANSWER_ACTION_DATA = stringPreferencesKey("answer_action_data")
+        val ANSWER_ACTION_NEEDS_RESPONSE = booleanPreferencesKey("answer_action_needs_response")
         val HANGUP_ACTION_SERVICE = stringPreferencesKey("hangup_action_service")
         val HANGUP_ACTION_ENTITY_ID = stringPreferencesKey("hangup_action_entity_id")
+        val HANGUP_ACTION_DATA = stringPreferencesKey("hangup_action_data")
+        val HANGUP_ACTION_NEEDS_RESPONSE = booleanPreferencesKey("hangup_action_needs_response")
     }
 
-    override val haUrlFlow: Flow<String?> = context.dataStore.data.map { it[HA_URL]?.trim() }
-    override val haTokenFlow: Flow<String?> = context.dataStore.data.map { it[HA_TOKEN]?.trim() }
+    override val homeAssistantConnectionFlow: Flow<HomeAssistantConnection> = context.dataStore.data.map {
+        HomeAssistantConnection(url = it[HA_URL].orEmpty().trim(), token = it[HA_TOKEN].orEmpty().trim())
+    }
     override val streamSourceFlow: Flow<String?> = context.dataStore.data.map { it[STREAM_SOURCE]?.trim() }
-    override val quickReplyEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[QUICK_REPLY_ENTITY_ID]?.trim() }
-    override val lockEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[LOCK_ENTITY_ID]?.trim() }
     override val instantTwoWayAudioFlow: Flow<Boolean> = context.dataStore.data.map { it[INSTANT_TWO_WAY_AUDIO] ?: false }
     override val webrtcProviderFlow: Flow<String> = context.dataStore.data.map { it[WEBRTC_PROVIDER] ?: "frigate" }
-    override val doorEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[DOOR_ENTITY_ID]?.trim() }
-    override val doorServiceFlow: Flow<String?> = context.dataStore.data.map { it[DOOR_SERVICE]?.trim() }
-    override val answerActionServiceFlow: Flow<String?> = context.dataStore.data.map { it[ANSWER_ACTION_SERVICE]?.trim() }
-    override val answerActionEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[ANSWER_ACTION_ENTITY_ID]?.trim() }
-    override val hangupActionServiceFlow: Flow<String?> = context.dataStore.data.map { it[HANGUP_ACTION_SERVICE]?.trim() }
-    override val hangupActionEntityIdFlow: Flow<String?> = context.dataStore.data.map { it[HANGUP_ACTION_ENTITY_ID]?.trim() }
+    override val callActionsFlow: Flow<CallActions> = context.dataStore.data.map {
+        CallActions(
+            answer = CallServiceSettings(
+                service = it[ANSWER_ACTION_SERVICE].orEmpty().trim(),
+                entityId = it[ANSWER_ACTION_ENTITY_ID].orEmpty().trim(),
+                data = decodeActionData(it[ANSWER_ACTION_DATA]),
+                needsResponse = it[ANSWER_ACTION_NEEDS_RESPONSE] ?: false
+            ),
+            hangup = CallServiceSettings(
+                service = it[HANGUP_ACTION_SERVICE].orEmpty().trim(),
+                entityId = it[HANGUP_ACTION_ENTITY_ID].orEmpty().trim(),
+                data = decodeActionData(it[HANGUP_ACTION_DATA]),
+                needsResponse = it[HANGUP_ACTION_NEEDS_RESPONSE] ?: false
+            )
+        )
+    }
+    override val streamButtonLayoutFlow: Flow<StreamButtonLayout> = context.dataStore.data.map {
+        it[STREAM_BUTTON_LAYOUT]?.let(StreamButtonLayoutJson::decode) ?: StreamButtonLayout()
+    }
+
+    override suspend fun saveHomeAssistantConnection(url: String, token: String) {
+        context.dataStore.edit {
+            it[HA_URL] = normalizeHomeAssistantUrl(url)
+            it[HA_TOKEN] = token.trim()
+        }
+    }
 
     override suspend fun saveSettings(
-        url: String,
-        token: String,
         source: String,
-        quickReplyEntityId: String,
-        lockEntityId: String,
         instantTwoWayAudio: Boolean,
         provider: String,
-        doorEntityId: String,
-        doorService: String,
-        answerActionService: String,
-        answerActionEntityId: String,
-        hangupActionService: String,
-        hangupActionEntityId: String
+        callActions: CallActions,
+        streamButtonLayout: StreamButtonLayout
     ) {
         context.dataStore.edit { preferences ->
-            var finalUrl = url.trim().trimEnd('/')
-            if (finalUrl.isNotBlank()) {
-                finalUrl = finalUrl.replaceFirst("http://", "https://")
-                if (!finalUrl.startsWith("https://")) {
-                    finalUrl = "https://$finalUrl"
-                }
-            }
-            preferences[HA_URL] = finalUrl
-            preferences[HA_TOKEN] = token.trim()
             preferences[STREAM_SOURCE] = source.trim()
-            preferences[QUICK_REPLY_ENTITY_ID] = quickReplyEntityId.trim()
-            preferences[LOCK_ENTITY_ID] = lockEntityId.trim()
             preferences[INSTANT_TWO_WAY_AUDIO] = instantTwoWayAudio
             preferences[WEBRTC_PROVIDER] = provider
-            preferences[DOOR_ENTITY_ID] = doorEntityId.trim()
-            preferences[DOOR_SERVICE] = doorService.trim()
-            preferences[ANSWER_ACTION_SERVICE] = answerActionService.trim()
-            preferences[ANSWER_ACTION_ENTITY_ID] = answerActionEntityId.trim()
-            preferences[HANGUP_ACTION_SERVICE] = hangupActionService.trim()
-            preferences[HANGUP_ACTION_ENTITY_ID] = hangupActionEntityId.trim()
+            preferences[ANSWER_ACTION_SERVICE] = callActions.answer.service.trim()
+            preferences[ANSWER_ACTION_ENTITY_ID] = callActions.answer.entityId.trim()
+            preferences[ANSWER_ACTION_DATA] = callActions.answer.data.toString()
+            preferences[ANSWER_ACTION_NEEDS_RESPONSE] = callActions.answer.needsResponse
+            preferences[HANGUP_ACTION_SERVICE] = callActions.hangup.service.trim()
+            preferences[HANGUP_ACTION_ENTITY_ID] = callActions.hangup.entityId.trim()
+            preferences[HANGUP_ACTION_DATA] = callActions.hangup.data.toString()
+            preferences[HANGUP_ACTION_NEEDS_RESPONSE] = callActions.hangup.needsResponse
+            preferences[STREAM_BUTTON_LAYOUT] = StreamButtonLayoutJson.encode(streamButtonLayout)
+        }
+    }
+
+    private fun decodeActionData(value: String?): JsonObject {
+        if (value == null) return JsonObject()
+        return try {
+            JsonParser.parseString(value) as? JsonObject ?: JsonObject()
+        } catch (_: JsonParseException) {
+            JsonObject()
         }
     }
 }
